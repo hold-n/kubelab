@@ -1,0 +1,26 @@
+# Two containers in one pod share a network namespace (localhost) and can share volumes.
+# Here a "sidecar" polls the app over localhost and writes to a shared log file.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: sidecar-demo
+spec:
+  volumes:
+    - name: shared
+      emptyDir: {} # scratch space that lives as long as the pod
+  containers:
+    - name: app
+      image: kubelab/app:v1
+      imagePullPolicy: Never
+    - name: poller
+      image: busybox:1.37
+      command: ["sh", "-c"]
+      args:
+        - |
+          while true; do
+            wget -qO- http://localhost:8080/ | grep version >> /data/poll.log
+            sleep 5
+          done
+      volumeMounts:
+        - name: shared
+          mountPath: /data

@@ -1,0 +1,45 @@
+# HTTPRoute: routing rules attached to a Gateway (like ALB listener rules),
+# typically owned by the application team.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: web
+spec:
+  parentRefs:
+    - name: web-gateway
+  rules:
+    # Rule 1: requests with header "x-canary: true" always go to v2
+    - matches:
+        - headers:
+            - name: x-canary
+              value: "true"
+      backendRefs:
+        - name: web-v2
+          port: 80
+    # Rule 2: explicit version paths, with the prefix stripped before forwarding
+    - matches:
+        - path: { type: PathPrefix, value: /v1 }
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path: { type: ReplacePrefixMatch, replacePrefixMatch: / }
+      backendRefs:
+        - name: web-v1
+          port: 80
+    - matches:
+        - path: { type: PathPrefix, value: /v2 }
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path: { type: ReplacePrefixMatch, replacePrefixMatch: / }
+      backendRefs:
+        - name: web-v2
+          port: 80
+    # Rule 3: everything else - a weighted canary split (90% v1 / 10% v2)
+    - backendRefs:
+        - name: web-v1
+          port: 80
+          weight: 90
+        - name: web-v2
+          port: 80
+          weight: 10

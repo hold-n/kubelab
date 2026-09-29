@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: shop, tier: frontend }
+  template:
+    metadata:
+      labels: { app: shop, tier: frontend }
+    spec:
+      containers:
+        - name: app
+          image: kubelab/app:v1
+          imagePullPolicy: Never
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: shop
+spec:
+  selector: { app: shop, tier: fronted }
+  ports:
+    - port: 80
+      targetPort: 8080
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: client
+spec:
+  containers:
+    - name: curl
+      image: curlimages/curl:8.16.0
+      command: ["sleep", "infinity"]

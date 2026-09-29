@@ -1,0 +1,88 @@
+# kubelab — learn Kubernetes by doing
+
+A hands-on Kubernetes course for an engineer who already knows distributed systems and AWS
+(ECS, ASGs, ELB, CloudFormation, IAM…) but hasn't used Kubernetes. Every lesson runs on a
+real multi-node cluster in this orb, and most end with a challenge.
+
+## The lab
+
+```
+┌──────────────────────────── orb (Docker host) ─────────────────────────────┐
+│                                                                            │
+│  kind cluster "lab"  (each node is a Docker container)                     │
+│  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐          │
+│  │ lab-control-plane│  │ lab-worker       │  │ lab-worker2      │          │
+│  │ API server, etcd │  │ zone=zone-a      │  │ zone=zone-b      │          │
+│  │ scheduler, ctrl- │  │ kubelet +        │  │ kubelet +        │          │
+│  │ manager          │  │ containerd       │  │ containerd       │          │
+│  └──────────────────┘  └──────────────────┘  └──────────────────┘          │
+│                                                                            │
+│  cloud-provider-kind: acts like AWS for Services of type LoadBalancer      │
+│  kubectl / helm / kind: your tools                                         │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+- **Kubernetes** v1.37 via [kind](https://kind.sigs.k8s.io) (Kubernetes-in-Docker): 1 control plane + 2 workers.
+- **cloud-provider-kind** gives `LoadBalancer` Services a reachable IP, like the AWS
+  Load Balancer Controller would give you an NLB.
+- **kubelab app** ([app/server.py](app/server.py)): a tiny HTTP service with knobs to crash, hang,
+  leak memory, burn CPU, and flip readiness, so you can watch Kubernetes respond.
+  Images `kubelab/app:v1` and `kubelab/app:v2` are built locally and side-loaded into the nodes.
+
+```bash
+./cluster/up.sh     # create/repair the cluster (idempotent; re-run after an orb restart)
+./cluster/down.sh   # delete it completely
+```
+
+## How to work through it
+
+- Type the commands yourself rather than copy-pasting the whole block. Read the output.
+- Keep a second terminal open running `kubectl get pods -w` (or `watch kubectl get pods -o wide`).
+  Watching the cluster react is most of the learning.
+- `kubectl explain <thing>` is the built-in docs for every field, e.g. `kubectl explain deployment.spec.strategy`.
+- If something goes wrong, `./cluster/down.sh && ./cluster/up.sh` gives you a fresh cluster in about a minute.
+
+## Lessons
+
+| #  | Lesson | You'll learn | Time |
+|----|--------|--------------|------|
+| 00 | [Orientation](lessons/00-orientation/README.md) | Architecture, the reconciliation loop, finding your way around with kubectl | 30m |
+| 01 | [Pods](lessons/01-pods/README.md) | The unit of deployment; logs, exec, port-forward, sidecars | 45m |
+| 02 | [Deployments](lessons/02-deployments/README.md) | Self-healing, scaling, rolling updates, rollbacks | 45m |
+| 03 | [Services & networking](lessons/03-services/README.md) | Service discovery, DNS, ClusterIP / NodePort / LoadBalancer | 45m |
+| 04 | [Config & Secrets](lessons/04-config/README.md) | ConfigMaps, Secrets, env vs mounted files, the Downward API | 30m |
+| 05 | [Health & resources](lessons/05-health-resources/README.md) | Probes, requests/limits, OOMKilled, QoS, graceful shutdown | 60m |
+| 06 | [Namespaces, quotas & RBAC](lessons/06-namespaces-rbac/README.md) | Multi-tenancy, ServiceAccounts, Roles, `kubectl auth can-i` | 45m |
+| 07 | [Storage & StatefulSets](lessons/07-storage-statefulsets/README.md) | PVCs, StorageClasses, stable identity, running Redis | 45m |
+| 08 | [Helm & Kustomize](lessons/08-helm/README.md) | Installing third-party charts, writing your own chart, overlays | 60m |
+| 09 | [Gateway API](lessons/09-gateway-api/README.md) | L7 routing, header matching, canary traffic splits | 45m |
+| 10 | [Scheduling](lessons/10-scheduling/README.md) | Node selection, spreading across zones, taints, drains, PDBs | 45m |
+| 11 | [Jobs, CronJobs & DaemonSets](lessons/11-jobs-daemonsets/README.md) | Batch work, scheduled work, per-node agents | 30m |
+| 12 | [Autoscaling](lessons/12-autoscaling/README.md) | HPA driven by real CPU load | 30m |
+| 13 | [Troubleshooting drills](lessons/13-troubleshooting/README.md) | 10 broken scenarios to diagnose and fix, graded by script | 90m |
+| 14 | [Capstone](lessons/14-capstone/README.md) | Build a production-shaped app from requirements; auto-graded | 2h |
+| 15 | [From lab to production](lessons/15-to-production/README.md) | EKS specifics, GitOps, operators, and the wider ecosystem | reading |
+
+## Cheat sheet: AWS → Kubernetes
+
+| AWS concept | Kubernetes counterpart | Notes |
+|---|---|---|
+| ECS task / task definition | Pod / pod template | One or more containers sharing network + volumes |
+| ECS service, ASG desired count | Deployment (→ ReplicaSet) | Controller keeps N replicas running and handles rollouts |
+| CodeDeploy rolling / blue-green | Deployment `strategy`, Gateway API weights, Argo Rollouts | |
+| Cloud Map / internal ALB | Service (ClusterIP) + cluster DNS | `http://web.default.svc.cluster.local` |
+| NLB | Service `type: LoadBalancer` | On EKS, provisioned by the AWS Load Balancer Controller |
+| ALB + listener rules | Gateway + HTTPRoute (or the older Ingress) | |
+| ELB health check / ECS health check | readinessProbe / livenessProbe | Readiness gates traffic; liveness restarts |
+| SSM Parameter Store | ConfigMap | |
+| Secrets Manager | Secret (+ External Secrets Operator on EKS) | Base64, not encryption, by default |
+| IAM policy / role | Role, ClusterRole / RoleBinding | For access to the *Kubernetes API* |
+| Instance profile / task role | ServiceAccount (+ EKS Pod Identity for AWS APIs) | |
+| AWS account / team boundary | Namespace (+ ResourceQuota, RBAC, NetworkPolicy) | Softer boundary than an account |
+| EBS volume | PersistentVolume (via PVC + StorageClass) | EBS CSI driver on EKS |
+| ASG target tracking | HorizontalPodAutoscaler | Scales pods; Karpenter / Cluster Autoscaler scale nodes |
+| AZ spread | `topologySpreadConstraints` on `topology.kubernetes.io/zone` | |
+| AWS Batch / scheduled ECS task | Job / CronJob | |
+| ECS daemon scheduling | DaemonSet | |
+| CloudFormation template | YAML manifests; Helm chart / Kustomize for reuse | Continuously reconciled, not one-shot |
+| CloudFormation custom resource | CustomResourceDefinition + controller (an "operator") | |

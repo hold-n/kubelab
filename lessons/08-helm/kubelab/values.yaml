@@ -1,0 +1,23 @@
+# Default values. Override with `--set key=value` or `-f my-values.yaml`.
+replicaCount: 2
+
+image:
+  repository: kubelab/app
+  tag: "" # empty => use .Chart.AppVersion
+  pullPolicy: Never
+
+greeting: "hello from Helm"
+
+service:
+  type: ClusterIP
+  port: 80
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    memory: 128Mi
+
+# Optional Redis connection for the visit counter (empty = disabled)
+redisHost: ""

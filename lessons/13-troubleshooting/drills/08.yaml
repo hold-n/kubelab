@@ -1,0 +1,56 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: pod-watcher
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: read-pods
+rules:
+  - apiGroups: [""]
+    resources: ["pod"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: pod-watcher-read-pods
+subjects:
+  - kind: ServiceAccount
+    name: pod-watcher
+roleRef:
+  kind: Role
+  name: read-pods
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: watcher
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: watcher }
+  template:
+    metadata:
+      labels: { app: watcher }
+    spec:
+      serviceAccountName: pod-watcher
+      containers:
+        - name: watcher
+          image: curlimages/curl:8.16.0
+          command: ["sh", "-c"]
+          args:
+            - |
+              T=/var/run/secrets/kubernetes.io/serviceaccount
+              while true; do
+                out=$(curl -s --cacert $T/ca.crt -H "Authorization: Bearer $(cat $T/token)" \
+                  "https://kubernetes.default.svc/api/v1/namespaces/$(cat $T/namespace)/pods")
+                if echo "$out" | grep -q '"kind": "PodList"'; then
+                  echo "OK: I can see $(echo "$out" | grep -c '"podIP"') pod(s)"
+                else
+                  echo "ERROR: $(echo "$out" | grep '"message"')"
+                fi
+                sleep 10
+              done

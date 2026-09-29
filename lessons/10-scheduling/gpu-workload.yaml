@@ -1,0 +1,26 @@
+# Taints repel pods; tolerations let specific pods ignore a taint.
+# Typical use: dedicated nodes (GPUs, a team, spot instances).
+# Note: a toleration *allows* scheduling onto the tainted node; it doesn't *force* it.
+# Combine with affinity/nodeSelector to attract the pod there.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: gpu-job
+spec:
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: gpu
+      effect: NoSchedule
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: zone
+                operator: In
+                values: ["zone-a"]
+  containers:
+    - name: app
+      image: kubelab/app:v1
+      imagePullPolicy: Never

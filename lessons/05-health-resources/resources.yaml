@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: hungry
+spec:
+  containers:
+    - name: app
+      image: kubelab/app:v1
+      imagePullPolicy: Never
+      resources:
+        # requests: what the scheduler reserves on a node (used for bin-packing)
+        requests:
+          cpu: 100m # 0.1 of a core
+          memory: 64Mi
+        # limits: hard caps enforced by the kernel (cgroups)
+        #   cpu over limit    => throttled
+        #   memory over limit => OOMKilled
+        limits:
+          cpu: 500m
+          memory: 128Mi

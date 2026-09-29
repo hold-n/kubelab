@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  labels:
+    app: web
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: web # which pods this Deployment owns - must match the template labels
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1 # at most 1 pod above `replicas` during an update
+      maxUnavailable: 0 # never drop below `replicas` ready pods
+  template: # the pod "launch template"
+    metadata:
+      labels:
+        app: web
+    spec:
+      containers:
+        - name: app
+          image: kubelab/app:v1
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8080
+          env:
+            - name: POD_NAME
+              valueFrom: { fieldRef: { fieldPath: metadata.name } }
+            - name: NODE_NAME
+              valueFrom: { fieldRef: { fieldPath: spec.nodeName } }
+          readinessProbe: # explained in lesson 05; makes rollouts wait for real readiness
+            httpGet: { path: /readyz, port: 8080 }
+            periodSeconds: 2

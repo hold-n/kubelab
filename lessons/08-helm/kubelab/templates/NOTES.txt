@@ -1,0 +1,5 @@
+{{ include "kubelab.fullname" . }} is deployed ({{ .Values.replicaCount }} replicas, image tag {{ .Values.image.tag | default .Chart.AppVersion }}).
+
+Try it:
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "kubelab.fullname" . }} 9090:{{ .Values.service.port }}
+  curl localhost:9090/

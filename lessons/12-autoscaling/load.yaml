@@ -1,0 +1,19 @@
+# Load generator: each request makes a pod burn CPU for 1 second.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: load
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: load
+  template:
+    metadata:
+      labels:
+        app: load
+    spec:
+      containers:
+        - name: load
+          image: curlimages/curl:8.16.0
+          command: ["sh", "-c", "while true; do curl -s -o /dev/null 'http://autoscale/burn?seconds=1'; sleep 0.5; done"]

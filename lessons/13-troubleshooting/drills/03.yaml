@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: shop-config
+data:
+  greeting: "welcome to the shop"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: shop }
+  template:
+    metadata:
+      labels: { app: shop }
+    spec:
+      containers:
+        - name: app
+          image: kubelab/app:v1
+          imagePullPolicy: Never
+          env:
+            - name: GREETING
+              valueFrom:
+                configMapKeyRef: { name: shop-config, key: GREETING }

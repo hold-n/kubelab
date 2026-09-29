@@ -1,0 +1,11 @@
+# Non-secret configuration, decoupled from the image (think SSM Parameter Store).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: web-config
+data:
+  # A simple key, consumed as an environment variable
+  GREETING: "hello from a ConfigMap"
+  # A whole file, consumed as a mounted volume
+  message.txt: |
+    This text lives in a ConfigMap and is mounted as a file.

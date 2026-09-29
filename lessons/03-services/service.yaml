@@ -1,0 +1,13 @@
+# A stable virtual IP + DNS name in front of every *ready* pod matching the selector.
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+spec:
+  type: ClusterIP # the default: reachable only inside the cluster
+  selector:
+    app: web
+  ports:
+    - name: http
+      port: 80 # the port clients use on the Service
+      targetPort: 8080 # the port the container listens on

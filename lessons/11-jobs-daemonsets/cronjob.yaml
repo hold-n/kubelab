@@ -1,0 +1,19 @@
+# A CronJob creates a Job on a schedule (like an EventBridge scheduled rule).
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: heartbeat
+spec:
+  schedule: "* * * * *" # every minute (standard cron syntax, UTC by default)
+  concurrencyPolicy: Forbid # skip a run if the previous one is still going
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: beat
+              image: busybox:1.37
+              command: ["sh", "-c", "echo heartbeat at $(date)"]

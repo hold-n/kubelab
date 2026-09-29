@@ -1,0 +1,12 @@
+# Gateway: an actual load balancer instance with listeners (like an ALB + its listeners).
+# Envoy Gateway reacts by creating an Envoy proxy Deployment and a LoadBalancer Service.
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: web-gateway
+spec:
+  gatewayClassName: envoy
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 80

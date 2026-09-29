@@ -1,0 +1,25 @@
+# A Job runs pods to *completion* (like an AWS Batch job or a one-off ECS task).
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: crunch
+spec:
+  completions: 6 # need 6 successful pods in total
+  parallelism: 2 # run at most 2 at a time
+  backoffLimit: 4 # give up after 4 failed pods
+  ttlSecondsAfterFinished: 600 # garbage-collect the Job 10 minutes after it finishes
+  template:
+    spec:
+      restartPolicy: Never # Jobs require Never or OnFailure
+      containers:
+        - name: worker
+          image: kubelab/app:v1
+          imagePullPolicy: Never
+          command: ["python", "-c"]
+          args:
+            - |
+              import os, random, socket, time
+              n = random.randint(2, 6)
+              print(f"{socket.gethostname()}: working for {n}s")
+              time.sleep(n)
+              print("done")

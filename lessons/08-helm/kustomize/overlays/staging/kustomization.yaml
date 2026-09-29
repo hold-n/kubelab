@@ -1,0 +1,25 @@
+# Kustomize: no templating language - start from plain YAML and apply patches.
+# Built into kubectl: `kubectl kustomize <dir>` renders, `kubectl apply -k <dir>` applies.
+namespace: staging
+namePrefix: staging-
+labels:
+  - pairs:
+      env: staging
+    includeSelectors: true
+resources:
+  - namespace.yaml
+  - ../../base
+images:
+  - name: kubelab/app
+    newTag: v2
+patches:
+  - target:
+      kind: Deployment
+      name: web
+    patch: |
+      - op: replace
+        path: /spec/replicas
+        value: 3
+      - op: replace
+        path: /spec/template/spec/containers/0/env/0/value
+        value: "hello from staging"

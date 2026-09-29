@@ -1,0 +1,32 @@
+# A namespace is a scope for names, RBAC, quotas and policies (a soft multi-tenancy
+# boundary, not a security boundary like an AWS account).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: team-a
+---
+# Cap the total resources the namespace can claim (like service quotas, per team).
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: team-a-quota
+  namespace: team-a
+spec:
+  hard:
+    pods: "5"
+    requests.cpu: "1"
+    requests.memory: 1Gi
+    limits.memory: 2Gi
+---
+# Defaults applied to containers that don't declare resources
+# (with a quota on requests/limits, pods without them would otherwise be rejected).
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: team-a-defaults
+  namespace: team-a
+spec:
+  limits:
+    - type: Container
+      defaultRequest: { cpu: 100m, memory: 64Mi }
+      default: { memory: 128Mi }

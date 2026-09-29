@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "kubelab.fullname" . }}
+  labels:
+    {{- include "kubelab.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "kubelab.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "kubelab.selectorLabels" . | nindent 8 }}
+      annotations:
+        # Changing the ConfigMap changes this hash, which triggers a rolling restart.
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      containers:
+        - name: app
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: GREETING
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "kubelab.fullname" . }}
+                  key: GREETING
+            - name: POD_NAME
+              valueFrom: { fieldRef: { fieldPath: metadata.name } }
+            - name: POD_NAMESPACE
+              valueFrom: { fieldRef: { fieldPath: metadata.namespace } }
+            {{- with .Values.redisHost }}
+            - name: REDIS_HOST
+              value: {{ . | quote }}
+            {{- end }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/kubelab
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+            periodSeconds: 2
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "kubelab.fullname" . }}
+            items:
+              - key: message.txt
+                path: message.txt

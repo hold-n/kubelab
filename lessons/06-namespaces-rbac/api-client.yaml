@@ -1,0 +1,13 @@
+# A pod running as the `deployer` ServiceAccount. Kubernetes mounts a short-lived
+# token for that identity at /var/run/secrets/kubernetes.io/serviceaccount/.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: api-client
+  namespace: team-a
+spec:
+  serviceAccountName: deployer
+  containers:
+    - name: shell
+      image: curlimages/curl:8.16.0
+      command: ["sleep", "infinity"]

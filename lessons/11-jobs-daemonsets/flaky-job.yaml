@@ -1,0 +1,21 @@
+# A Job whose pods fail ~70% of the time. Watch Kubernetes retry with exponential backoff.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: flaky
+spec:
+  backoffLimit: 6
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: worker
+          image: kubelab/app:v1
+          imagePullPolicy: Never
+          command: ["python", "-c"]
+          args:
+            - |
+              import random, sys
+              ok = random.random() > 0.7
+              print("success!" if ok else "failed, exiting 1")
+              sys.exit(0 if ok else 1)

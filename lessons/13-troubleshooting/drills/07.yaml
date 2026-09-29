@@ -1,0 +1,23 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: shop }
+  template:
+    metadata:
+      labels: { app: shop }
+    spec:
+      containers:
+        - name: app
+          image: kubelab/app:v1
+          imagePullPolicy: Never
+          # Warm a 100 MiB in-memory cache, then serve.
+          command: ["python", "-c", "cache = bytearray(100 * 1024 * 1024); exec(open('server.py').read())"]
+          resources:
+            requests: { memory: 64Mi }
+            limits: { memory: 64Mi }
+          readinessProbe:
+            httpGet: { path: /readyz, port: 8080 }

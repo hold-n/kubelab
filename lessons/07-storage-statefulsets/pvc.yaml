@@ -1,0 +1,31 @@
+# A PersistentVolumeClaim is a request for storage ("I need 1Gi, read-write by one node").
+# The StorageClass's provisioner creates a matching PersistentVolume on demand.
+# On EKS the EBS CSI driver would create an EBS volume; here kind's
+# local-path provisioner creates a directory on the node.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: notes
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 1Gi
+  # storageClassName omitted => the cluster's default StorageClass ("standard")
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: writer
+spec:
+  containers:
+    - name: shell
+      image: busybox:1.37
+      command: ["sh", "-c", "date >> /data/log.txt; cat /data/log.txt; sleep infinity"]
+      volumeMounts:
+        - name: data
+          mountPath: /data
+  volumes:
+    - name: data
+      persistentVolumeClaim:
+        claimName: notes

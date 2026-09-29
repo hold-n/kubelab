@@ -1,0 +1,11 @@
+# A PodDisruptionBudget limits *voluntary* disruptions (node drains, upgrades,
+# Karpenter consolidation). Here: always keep at least 3 "spread" pods running.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: spread-pdb
+spec:
+  minAvailable: 3
+  selector:
+    matchLabels:
+      app: spread

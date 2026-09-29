@@ -1,0 +1,7 @@
+apiVersion: kubelab.dev/v1
+kind: Greeter
+metadata:
+  name: hello
+spec:
+  message: "hello from a custom resource"
+  replicas: 2

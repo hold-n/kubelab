@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: probes
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: probes
+  template:
+    metadata:
+      labels:
+        app: probes
+    spec:
+      terminationGracePeriodSeconds: 10 # SIGTERM, wait up to 10s, then SIGKILL
+      containers:
+        - name: app
+          image: kubelab/app:v1
+          imagePullPolicy: Never
+          env:
+            - name: STARTUP_DELAY # /readyz returns 503 for the first 15 seconds
+              value: "15"
+          ports:
+            - containerPort: 8080
+          # Startup probe: gives slow-starting apps time before the other probes kick in.
+          startupProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            periodSeconds: 2
+            failureThreshold: 30 # up to 60s to start
+          # Readiness: "should I receive traffic?" Failing => removed from Service endpoints.
+          # (like an ALB target group health check)
+          readinessProbe:
+            httpGet: { path: /readyz, port: 8080 }
+            periodSeconds: 2
+            failureThreshold: 1
+          # Liveness: "am I wedged?" Failing => kubelet kills and restarts the container.
+          # (like an ASG/ECS health check replacing an instance/task - but in place)
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            periodSeconds: 3
+            failureThreshold: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: probes
+spec:
+  selector:
+    app: probes
+  ports:
+    - port: 80
+      targetPort: 8080

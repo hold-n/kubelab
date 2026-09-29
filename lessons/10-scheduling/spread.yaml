@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: spread
+spec:
+  replicas: 4
+  selector:
+    matchLabels:
+      app: spread
+  template:
+    metadata:
+      labels:
+        app: spread
+    spec:
+      # Spread pods evenly across zones (like spreading an ASG across AZs).
+      # Our workers are labelled zone=zone-a and zone=zone-b (see cluster/kind-config.yaml).
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: zone
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: spread
+      containers:
+        - name: app
+          image: kubelab/app:v1
+          imagePullPolicy: Never
+          resources:
+            requests: { cpu: 50m, memory: 32Mi }

@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pinned
+spec:
+  # Simplest form of placement: only nodes with this label are candidates.
+  nodeSelector:
+    zone: zone-b
+  containers:
+    - name: app
+      image: kubelab/app:v1
+      imagePullPolicy: Never

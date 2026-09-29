@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  labels:
+    app: web
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: web
+  template:
+    metadata:
+      labels:
+        app: web
+    spec:
+      containers:
+        - name: app
+          image: kubelab/app:v1
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8080
+          env:
+            - name: POD_NAME
+              valueFrom: { fieldRef: { fieldPath: metadata.name } }
+            # One key from a ConfigMap
+            - name: GREETING
+              valueFrom:
+                configMapKeyRef: { name: web-config, key: GREETING }
+            # One key from a Secret
+            - name: API_TOKEN
+              valueFrom:
+                secretKeyRef: { name: web-secret, key: API_TOKEN }
+          volumeMounts:
+            - name: config
+              mountPath: /etc/kubelab # the app reads /etc/kubelab/message.txt
+              readOnly: true
+          readinessProbe:
+            httpGet: { path: /readyz, port: 8080 }
+            periodSeconds: 2
+      volumes:
+        - name: config
+          configMap:
+            name: web-config
+            items:
+              - key: message.txt
+                path: message.txt

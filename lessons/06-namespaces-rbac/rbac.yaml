@@ -1,0 +1,37 @@
+# An identity for workloads (like an IAM role a pod can assume; on EKS you can
+# even bind a ServiceAccount to an IAM role via Pod Identity / IRSA).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: deployer
+  namespace: team-a
+---
+# A Role is a set of permissions within one namespace (like an IAM policy).
+# ClusterRole is the cluster-wide equivalent.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: app-manager
+  namespace: team-a
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+  - apiGroups: [""] # "" = the core API group (pods, services, configmaps, ...)
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list", "watch"]
+---
+# A RoleBinding attaches a Role to users, groups or ServiceAccounts.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: deployer-is-app-manager
+  namespace: team-a
+subjects:
+  - kind: ServiceAccount
+    name: deployer
+    namespace: team-a
+roleRef:
+  kind: Role
+  name: app-manager
+  apiGroup: rbac.authorization.k8s.io

@@ -1,0 +1,11 @@
+# Environment-specific overrides layered on top of kubelab/values.yaml
+replicaCount: 4
+greeting: "hello from PROD"
+image:
+  tag: v2
+resources:
+  requests:
+    cpu: 100m
+    memory: 96Mi
+  limits:
+    memory: 256Mi
