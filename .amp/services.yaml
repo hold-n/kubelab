@@ -1,0 +1,60 @@
+# Orb services for kubelab. Start everything with:  amp orb services ensure
+# (The Portal tab also starts them when you open a link.)
+services:
+  # The course: rendered lessons + file viewer + an embedded terminal.
+  docs:
+    command: node --use-system-ca portal/server.mjs docs
+    health: /healthz
+    env:
+      TERMINAL_PORT: "7681"
+      PROMETHEUS_URL: ${services.prometheus.publicURL}
+      CONSUL_URL: ${services.consul.publicURL}
+      VAULT_URL: ${services.vault.publicURL}
+      GATEWAY_URL: ${services.gateway.publicURL}
+    portal:
+      title: kubelab course
+      description: The Kubernetes course with a built-in terminal. Select any text and use the review button to ask the agent about it.
+
+  # Browser terminal (ttyd) attached to tmux session "kubelab". Not exposed directly: the
+  # docs service proxies it at /terminal/ and only lets the thread's collaborators in.
+  terminal:
+    command: ttyd -i lo -p "$PORT" -b /terminal -W -t fontSize=14 -t disableLeaveAlert=true -t titleFixed=kubelab -t rendererType=dom tmux new-session -A -s kubelab ';' set-option status off
+    port: 7681
+
+  # Web UIs of tools running inside the cluster, each behind a self-healing kubectl port-forward.
+  prometheus:
+    command: >-
+      node portal/server.mjs forward --name Prometheus --namespace monitoring
+      --target svc/prom-prometheus-server --remote-port 80
+      --hint "Install it with Helm in lesson 16 (Part 3, Prometheus)."
+    review: false
+    portal:
+      title: Prometheus
+      description: Prometheus UI (installed in lesson 16).
+  consul:
+    command: >-
+      node portal/server.mjs forward --name Consul --namespace toolbox
+      --target pod/consul --remote-port 8500 --path /ui/
+      --hint "Create it with kubectl apply -f toolbox.yaml in lesson 16."
+    review: false
+    portal:
+      title: Consul
+      description: Consul UI (lesson 16 toolbox).
+  vault:
+    command: >-
+      node portal/server.mjs forward --name Vault --namespace toolbox
+      --target pod/vault --remote-port 8200 --path /ui/
+      --hint "Create it with kubectl apply -f toolbox.yaml in lesson 16. Sign in with the token root."
+    review: false
+    portal:
+      title: Vault
+      description: Vault UI (lesson 16 toolbox). Sign in with token "root".
+  gateway:
+    command: >-
+      node portal/server.mjs forward --name "The lesson 09 Gateway" --namespace envoy-gateway-system
+      --selector gateway.envoyproxy.io/owning-gateway-name=web-gateway --remote-port 80
+      --hint "Create web-gateway in lesson 09."
+    review: false
+    portal:
+      title: Gateway (lesson 09)
+      description: HTTP traffic through the lesson 09 Envoy Gateway.

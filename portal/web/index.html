@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>kubelab</title>
+  <link rel="stylesheet" href="/vendor/github-dark.min.css">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header>
+    <a class="brand" href="#/README.md">☸ kubelab</a>
+    <span class="subtitle">learn Kubernetes by doing</span>
+    <div class="spacer"></div>
+    <div class="tools">
+      <button id="tools-btn" aria-haspopup="true">Tool UIs ▾</button>
+      <div id="tools-menu" hidden></div>
+    </div>
+    <button id="terminal-btn" title="Toggle terminal (Ctrl+`)">▣ Terminal</button>
+  </header>
+  <div id="layout">
+    <nav id="sidebar"></nav>
+    <main id="content-wrap"><article id="content"></article></main>
+    <div id="resizer" hidden></div>
+    <section id="terminal-pane" hidden>
+      <div class="pane-bar">
+        <span>Terminal · tmux session <code>kubelab</code> · repo root</span>
+        <button id="terminal-reload" title="Reconnect">⟳</button>
+      </div>
+      <iframe id="terminal" title="Terminal"></iframe>
+    </section>
+  </div>
+  <div id="toast" hidden></div>
+  <script src="/vendor/marked.umd.js"></script>
+  <script src="/vendor/highlight.min.js"></script>
+  <script src="/vendor/dockerfile.min.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

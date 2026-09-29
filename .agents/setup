@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Prepares a fresh Amp orb: installs kubectl, kind, helm and ttyd.
+# The cluster itself is created on demand with ./cluster/up.sh, and the portal
+# services are declared in .amp/services.yaml.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+time ./cluster/install-tools.sh

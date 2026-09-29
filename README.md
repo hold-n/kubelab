@@ -34,6 +34,25 @@ real multi-node cluster in this orb, and most end with a challenge.
 ./cluster/down.sh   # delete it completely
 ```
 
+## Open the course in the portal
+
+The whole course runs in the browser through an Amp portal:
+
+- **Lessons rendered as HTML**, with a sidebar, syntax-highlighted code and a viewer for every
+  manifest the lessons link to.
+- **A built-in terminal** (the **▣ Terminal** button, or Ctrl+\`) that opens next to the text, at
+  the repo root. Every shell snippet has a **▶ Paste in terminal** button. It pastes the commands
+  without running them, so you can read them first and press Enter.
+- **Tool UIs** (Prometheus, Consul, Vault, and the lesson 09 Gateway), each on its own portal
+  and listed in the **Tool UIs** menu with a live running/not-running status.
+- **Ask about anything:** select text on any page and use the portal's review button to send a
+  question or comment straight to the Amp thread.
+
+Open **kubelab course** from the thread's **Portal** tab. If it isn't listed, run
+`amp orb services ensure` in the orb. The services are declared in
+`.amp/services.yaml` and the portal code lives in [portal/](portal/).
+Only this thread's collaborators can use the terminal.
+
 ## How to work through it
 
 - Type the commands yourself rather than copy-pasting the whole block. Read the output.

@@ -85,15 +85,12 @@ and roll back automatically when metrics degrade.
 
 ## 5. See it in your browser (optional)
 
-The Gateway IP is only reachable inside this orb. To expose it through an Amp portal URL,
-run this from the repo root:
+The Gateway IP is only reachable inside this orb, so the course portal includes a proxy for
+it. Open **Tool UIs → Gateway** in the course header (or **Gateway (lesson 09)** in the Portal
+tab). Try `/v1/`, `/v2/` and refreshing `/` a few times to see the 90/10 split in your browser.
 
-```bash
-amp orb service start gateway --port 8088 --portal --title 'kubelab gateway' --command \
-  'kubectl port-forward -n envoy-gateway-system $(kubectl get svc -n envoy-gateway-system -l gateway.envoyproxy.io/owning-gateway-name=web-gateway -o name) $PORT:80'
-```
-
-It prints a URL you can open. Stop it with `amp orb service stop gateway`.
+Behind the scenes it's `kubectl port-forward` to the Envoy Service that Envoy Gateway created
+for `web-gateway` (see [portal/server.mjs](../../portal/server.mjs), `forward` mode).
 
 ## Challenge
 

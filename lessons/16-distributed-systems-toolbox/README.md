@@ -149,7 +149,8 @@ etcd, Consul servers, Vault (integrated storage) and Kafka's KRaft controllers a
 
 ## Part 3: the tools
 
-Set up the playground once (single-node dev instances, [toolbox.yaml](toolbox.yaml)):
+Set up the playground once (single-node dev instances, [toolbox.yaml](toolbox.yaml)). Once
+it's running, the course's **Tool UIs** menu links to the Prometheus, Consul and Vault web UIs.
 
 ```bash
 cd lessons/16-distributed-systems-toolbox
@@ -301,8 +302,9 @@ q 'sum by (instance) (rate(node_cpu_seconds_total{mode!="idle"}[5m]))'          
 kill %1
 ```
 
-For the UI, run `amp orb service start prometheus --port 9090 --portal --command 'kubectl -n monitoring port-forward svc/prom-prometheus-server $PORT:80'`
-and open the URL it prints.
+Then open **Tool UIs → Prometheus** in the course header and run the same queries in the UI.
+Switch to the **Graph** tab to watch them over time, and look at **Status → Targets** to see
+everything Prometheus discovered through the Kubernetes API.
 
 ### Vault: secrets, identity and encryption
 
@@ -367,6 +369,9 @@ VAULT_TOKEN=$T vault kv get -field=db_password secret/myapp; echo
 VAULT_TOKEN=$T vault kv put secret/myapp db_password=pwned   # permission denied
 EOF
 ```
+
+Open **Tool UIs → Vault** and sign in with the token `root` to browse the same secrets, the
+`transit` key and the `myapp-read` policy in Vault's UI.
 
 ### etcd: the consistent key-value store you already run
 
@@ -506,6 +511,8 @@ $C kv get config/orders/max_conns
 
 In real life, services register themselves through the local agent, which runs health checks
 and takes failing instances out of DNS automatically.
+
+Open **Tool UIs → Consul** to see the same catalog, instances and key/value data in Consul's UI.
 
 ### Kafka: the distributed commit log
 

@@ -4,22 +4,9 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-KIND_VERSION=v0.33.0
 CPK_IMAGE=registry.k8s.io/cloud-provider-kind/cloud-controller-manager:v0.11.1
 
-# --- tools -------------------------------------------------------------------
-if ! command -v kubectl >/dev/null; then
-  v=$(curl -fsSL https://dl.k8s.io/release/stable.txt)
-  curl -fsSLo /tmp/kubectl "https://dl.k8s.io/release/$v/bin/linux/amd64/kubectl"
-  sudo install -m755 /tmp/kubectl /usr/local/bin/kubectl
-fi
-if ! command -v kind >/dev/null; then
-  curl -fsSLo /tmp/kind "https://kind.sigs.k8s.io/dl/$KIND_VERSION/kind-linux-amd64"
-  sudo install -m755 /tmp/kind /usr/local/bin/kind
-fi
-if ! command -v helm >/dev/null; then
-  curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-fi
+./cluster/install-tools.sh
 
 # --- docker ------------------------------------------------------------------
 if ! docker info >/dev/null 2>&1; then
@@ -57,3 +44,5 @@ echo "Loaded images kubelab/app:v1 and kubelab/app:v2 into the cluster."
 
 kubectl wait --for=condition=Ready nodes --all --timeout=120s >/dev/null
 kubectl get nodes
+echo
+echo "Next: open the kubelab course from the Portal tab (or run: amp orb services ensure)."
