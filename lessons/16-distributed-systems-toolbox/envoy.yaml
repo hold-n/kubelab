@@ -1,0 +1,93 @@
+# A standalone Envoy with a static config, so you can see Envoy's core model directly:
+#   listener → filter chain (HTTP connection manager) → route table → cluster → endpoints
+# In Istio / Envoy Gateway nobody writes this by hand: a control plane generates it and
+# streams it to Envoy over the xDS APIs (LDS/RDS/CDS/EDS) without restarts.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: envoy-config
+  namespace: toolbox
+data:
+  envoy.yaml: |
+    admin:
+      address: { socket_address: { address: 0.0.0.0, port_value: 9901 } }
+    static_resources:
+      listeners:
+        - name: http
+          address: { socket_address: { address: 0.0.0.0, port_value: 10000 } }
+          filter_chains:
+            - filters:
+                - name: envoy.filters.network.http_connection_manager
+                  typed_config:
+                    "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                    stat_prefix: ingress
+                    route_config:
+                      virtual_hosts:
+                        - name: all
+                          domains: ["*"]
+                          routes:
+                            # Envoy answers this one itself
+                            - match: { prefix: "/hello" }
+                              direct_response: { status: 200, body: { inline_string: "hello from envoy\n" } }
+                            # Everything under /app/ is proxied to the metrics-demo Service
+                            - match: { prefix: "/app/" }
+                              route:
+                                cluster: metrics_demo
+                                prefix_rewrite: "/"
+                                timeout: 1s             # per-request deadline
+                                retry_policy:            # retry transparently on failures
+                                  retry_on: "5xx,connect-failure"
+                                  num_retries: 2
+                    http_filters:
+                      - name: envoy.filters.http.router
+                        typed_config:
+                          "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+      clusters:
+        - name: metrics_demo
+          type: STRICT_DNS           # resolve the name and balance across all returned IPs
+          lb_policy: ROUND_ROBIN
+          load_assignment:
+            cluster_name: metrics_demo
+            endpoints:
+              - lb_endpoints:
+                  - endpoint:
+                      address:
+                        socket_address: { address: metrics-demo-headless.toolbox.svc.cluster.local, port_value: 8080 }
+          # Eject endpoints that keep failing (passive health checking / circuit breaking)
+          outlier_detection:
+            consecutive_5xx: 3
+            base_ejection_time: 30s
+---
+# Headless Service so DNS returns individual pod IPs and Envoy does the load balancing.
+apiVersion: v1
+kind: Service
+metadata:
+  name: metrics-demo-headless
+  namespace: toolbox
+spec:
+  clusterIP: None
+  selector: { app: metrics-demo }
+  ports:
+    - port: 8080
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: envoy
+  namespace: toolbox
+  labels: { app: envoy }
+spec:
+  containers:
+    - name: envoy
+      image: envoyproxy/envoy:v1.39.1
+      args: ["-c", "/etc/envoy/envoy.yaml"]
+      ports:
+        - containerPort: 10000
+        - containerPort: 9901
+      volumeMounts:
+        - name: config
+          mountPath: /etc/envoy
+  volumes:
+    - name: config
+      configMap:
+        name: envoy-config

@@ -158,6 +158,8 @@ hear about most, grouped by the problem they solve, with the closest AWS equival
 | **Vault** | secrets, dynamic credentials, PKI | Secrets Manager + ACM PCA |
 | **Temporal** | durable workflow execution | Step Functions |
 
+For a closer look at Envoy, Istio, Prometheus, Vault, etcd, ZooKeeper, Consul, Kafka and Temporal (what each does, how it works inside, and how it's run in practice), continue to [lesson 16](../16-distributed-systems-toolbox/README.md).
+
 A sensible learning order after this course: **Argo CD** (GitOps), then **Prometheus +
 Grafana**, then **cert-manager + ExternalDNS**, then **Karpenter** on a real EKS cluster.
 That covers most of what a production EKS platform runs.

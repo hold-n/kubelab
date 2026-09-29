@@ -1,0 +1,56 @@
+# Single-node, dev-mode instances of each tool, for poking at. NOT how you'd run them
+# in production (no replication, no persistence, no auth hardening). See "How these are
+# actually run" in the README for real topologies.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: toolbox
+---
+# Kafka in KRaft mode (no ZooKeeper): one process acting as both broker and controller.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: kafka
+  namespace: toolbox
+spec:
+  containers:
+    - name: kafka
+      image: apache/kafka:4.3.1
+---
+# Vault dev server: in-memory storage, auto-unsealed, root token "root". Never do this for real.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: vault
+  namespace: toolbox
+spec:
+  containers:
+    - name: vault
+      image: hashicorp/vault:2.1.1
+      env:
+        - { name: VAULT_DEV_ROOT_TOKEN_ID, value: root }
+        - { name: VAULT_ADDR, value: "http://127.0.0.1:8200" } # for the CLI inside the pod
+        - { name: VAULT_TOKEN, value: root }
+---
+# A one-node ZooKeeper "ensemble" (production: 3 or 5 nodes).
+apiVersion: v1
+kind: Pod
+metadata:
+  name: zk
+  namespace: toolbox
+spec:
+  containers:
+    - name: zookeeper
+      image: zookeeper:3.9.5
+---
+# Consul dev agent: a single server with in-memory state, UI/API on :8500, DNS on :8600.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: consul
+  namespace: toolbox
+spec:
+  containers:
+    - name: consul
+      image: hashicorp/consul:2.0.4
+      args: ["agent", "-dev", "-client=0.0.0.0"]

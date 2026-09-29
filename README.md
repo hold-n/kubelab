@@ -62,6 +62,7 @@ real multi-node cluster in this orb, and most end with a challenge.
 | 13 | [Troubleshooting drills](lessons/13-troubleshooting/README.md) | 10 broken scenarios to diagnose and fix, graded by script | 90m |
 | 14 | [Capstone](lessons/14-capstone/README.md) | Build a production-shaped app from requirements; auto-graded | 2h |
 | 15 | [From lab to production](lessons/15-to-production/README.md) | EKS specifics, GitOps, operators, and the wider ecosystem | reading |
+| 16 | [The distributed-systems toolbox](lessons/16-distributed-systems-toolbox/README.md) | How infra software is really run (cloud, SaaS, K8s, VMs, on-prem); Envoy, Istio, Prometheus, Vault, etcd, ZooKeeper, Consul, Kafka, Temporal | 2h |
 
 ## Cheat sheet: AWS → Kubernetes
 
