@@ -1,0 +1,62 @@
+# The kubelab app (which exposes /metrics) plus a load generator, so Prometheus has
+# something interesting to scrape. The annotations tell the community Prometheus chart's
+# default config to scrape these pods (the Prometheus Operator uses PodMonitor CRDs instead).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: metrics-demo
+  namespace: toolbox
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: metrics-demo }
+  template:
+    metadata:
+      labels: { app: metrics-demo }
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: /metrics
+    spec:
+      containers:
+        - name: app
+          image: kubelab/app:v1
+          imagePullPolicy: Never
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: metrics-demo
+  namespace: toolbox
+spec:
+  selector: { app: metrics-demo }
+  ports:
+    - port: 80
+      targetPort: 8080
+---
+# Mixed traffic: fast requests, slow requests (?delay=), and 404s.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: traffic
+  namespace: toolbox
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: traffic }
+  template:
+    metadata:
+      labels: { app: traffic }
+    spec:
+      containers:
+        - name: curl
+          image: curlimages/curl:8.16.0
+          command: ["sh", "-c"]
+          args:
+            - |
+              while true; do
+                curl -s -o /dev/null http://metrics-demo/
+                curl -s -o /dev/null "http://metrics-demo/?delay=0.$((RANDOM % 4))"
+                curl -s -o /dev/null http://metrics-demo/does-not-exist
+                sleep 0.2
+              done

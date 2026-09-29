@@ -9,6 +9,8 @@ Endpoints
   GET /burn?seconds=N   burn one CPU core for N seconds (for autoscaling)
   GET /leak?mb=N        allocate and hold N MiB of memory (for OOMKilled)
   GET /exit      exit the process with status 1 (for CrashLoopBackOff)
+  GET /metrics   Prometheus metrics (request counter + latency histogram)
+  Any endpoint accepts ?delay=SECONDS to add artificial latency.
 
 Environment
   VERSION        baked into the image at build time
@@ -33,6 +35,46 @@ STARTED = time.time()
 STATE = {"healthy": True, "ready": True}
 HOARD = []
 
+# Hand-rolled Prometheus metrics (a real app would use the prometheus_client library).
+KNOWN_PATHS = {"/", "/healthz", "/readyz", "/break", "/ready", "/unready", "/burn", "/leak", "/exit"}
+BUCKETS = (0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0)
+REQUESTS = {}  # (path, code) -> count
+LATENCY = {"buckets": [0] * len(BUCKETS), "sum": 0.0, "count": 0}
+METRICS_LOCK = threading.Lock()
+
+
+def record(path, code, seconds):
+    # Never use unbounded values (IDs, raw URLs) as labels: every distinct label
+    # combination is a separate time series in Prometheus ("cardinality explosion").
+    path = path if path in KNOWN_PATHS else "other"
+    with METRICS_LOCK:
+        REQUESTS[(path, code)] = REQUESTS.get((path, code), 0) + 1
+        for i, le in enumerate(BUCKETS):
+            if seconds <= le:
+                LATENCY["buckets"][i] += 1
+        LATENCY["sum"] += seconds
+        LATENCY["count"] += 1
+
+
+def render_metrics():
+    out = [
+        "# HELP kubelab_http_requests_total HTTP requests handled.",
+        "# TYPE kubelab_http_requests_total counter",
+    ]
+    with METRICS_LOCK:
+        for (path, code), n in sorted(REQUESTS.items()):
+            out.append(f'kubelab_http_requests_total{{path="{path}",code="{code}"}} {n}')
+        out += [
+            "# HELP kubelab_http_request_duration_seconds HTTP request latency.",
+            "# TYPE kubelab_http_request_duration_seconds histogram",
+        ]
+        for le, n in zip(BUCKETS, LATENCY["buckets"]):
+            out.append(f'kubelab_http_request_duration_seconds_bucket{{le="{le}"}} {n}')
+        out.append(f'kubelab_http_request_duration_seconds_bucket{{le="+Inf"}} {LATENCY["count"]}')
+        out.append(f'kubelab_http_request_duration_seconds_sum {LATENCY["sum"]:.6f}')
+        out.append(f'kubelab_http_request_duration_seconds_count {LATENCY["count"]}')
+    return "\n".join(out) + "\n"
+
 
 def log(msg):
     print(f"{time.strftime('%H:%M:%S')} {msg}", flush=True)
@@ -56,6 +98,7 @@ def burn(seconds):
 
 class Handler(BaseHTTPRequestHandler):
     def reply(self, code, body):
+        self.status = code
         data = (json.dumps(body, indent=2) + "\n").encode()
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
@@ -69,8 +112,26 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         url = urlparse(self.path)
+        if url.path == "/metrics":
+            data = render_metrics().encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain; version=0.0.4")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+            return
+        start = time.time()
+        self.status = 500
+        try:
+            self.handle_get(url)
+        finally:
+            record(url.path, self.status, time.time() - start)
+
+    def handle_get(self, url):
         q = parse_qs(url.query)
         path = url.path
+        if "delay" in q:
+            time.sleep(float(q["delay"][0]))
 
         if path == "/":
             body = {
