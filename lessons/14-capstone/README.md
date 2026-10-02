@@ -1,8 +1,9 @@
 # 14 — Capstone: ship a production-shaped service
 
-Build this yourself from the requirements, without copying from earlier lessons wholesale
-(referring back is fine). A reference solution is in [solution/](solution/). Try not to
-look until `verify.sh` passes or you're truly stuck.
+Until now every lesson handed you manifests to read. This time you get requirements, the
+way a ticket would, and write the manifests yourself. Referring back to earlier lessons is
+expected; copying them wholesale mostly teaches you how to copy. A reference solution is in
+[solution/](solution/). Try not to look until `verify.sh` passes or you're truly stuck.
 
 **Prerequisites:** metrics-server (lesson 08), and Envoy Gateway plus the `envoy`
 GatewayClass (lesson 09). Check with:
@@ -10,6 +11,9 @@ GatewayClass (lesson 09). Check with:
 ```bash
 kubectl top nodes && kubectl get gatewayclass envoy
 ```
+
+If `kubectl top` says `Metrics API not available` or the GatewayClass is missing, go back
+and run the install steps from those lessons.
 
 ## The system
 
@@ -26,19 +30,24 @@ kubectl top nodes && kubectl get gatewayclass envoy
      StatefulSet redis (1 replica, PVC)
 ```
 
+The app increments a `visits` counter in Redis on every `GET /` once `REDIS_HOST` is set
+(see the docstring in [app/server.py](../../app/server.py)).
+
 ## Requirements
 
-Put your manifests in `lessons/14-capstone/mine/` (or build a Helm chart, see the stretch goals).
+Put your manifests in `lessons/14-capstone/mine/` (or build a Helm chart; see the stretch
+goals). Give every object `namespace: capstone` in its metadata, so `kubectl apply -f mine/`
+puts it in the right place no matter what your current namespace is.
 
 1. Everything lives in namespace **`capstone`**, which has a **ResourceQuota** limiting
-   total CPU/memory requests.
+   total CPU and memory requests.
 2. **Redis** runs as a StatefulSet named `redis` (`redis:8-alpine`, with `--appendonly yes`),
    behind a headless Service `redis`, storing `/data` on a PVC via `volumeClaimTemplates`.
    Its data must survive the pod being deleted.
 3. The **app** is a Deployment named `web` with label `app: web`, image `kubelab/app:v1`:
    - `GREETING` and `REDIS_HOST` come from a **ConfigMap**
    - readiness **and** liveness probes
-   - CPU and memory requests, and a memory limit, on every container
+   - CPU and memory requests, and a memory limit, on every container (Redis's too)
    - pods spread across both worker nodes
 4. A **Service** `web`, and a **Gateway** + **HTTPRoute** in `capstone` routing `/` to it.
    `curl http://<gateway-ip>/` returns JSON with an incrementing `visits` count.
@@ -46,6 +55,9 @@ Put your manifests in `lessons/14-capstone/mine/` (or build a Helm chart, see th
 6. An **HPA** scales `web` between 3 and 6 replicas on CPU.
 7. **Zero-downtime rollouts:** a rolling restart of `web` under continuous traffic must not
    fail a single request. (Hint: probes, rollout strategy, and lesson 05 Part C.)
+
+Requirement 7 is the hard one. A naive Deployment passes everything else, then drops a few
+requests on every deploy: in production, the steady trickle of 502s nobody can explain.
 
 ## Grade yourself
 
@@ -56,7 +68,8 @@ kubectl apply -f mine/
 ```
 
 `verify.sh` checks the structure, sends traffic through the Gateway, deletes `redis-0` to
-test persistence, and does a rolling restart under load while counting failures.
+test persistence, then does a rolling restart of `web` while firing requests at it,
+counting every non-200. It takes under a minute; run it as often as you like.
 
 ## Stretch goals
 

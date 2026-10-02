@@ -1,6 +1,6 @@
 # type: LoadBalancer asks the cloud provider for an external load balancer.
 # On EKS the AWS Load Balancer Controller would create an NLB here;
-# in this lab, cloud-provider-kind creates a container with a routable IP.
+# in this lab, cloud-provider-kind runs an Envoy container with a routable IP.
 # (LoadBalancer is a superset of NodePort, which is a superset of ClusterIP.)
 apiVersion: v1
 kind: Service

@@ -4,13 +4,15 @@
 # work queues and status updates - but the core idea is exactly this loop:
 #   observe desired state → compare with actual → act → repeat.
 set -euo pipefail
+# Watch the namespace of your current kubectl context (override with NS=...).
+NS=${NS:-$(kubectl config view --minify -o jsonpath='{..namespace}')}
 NS=${NS:-default}
 echo "greeter-controller watching namespace $NS (Ctrl-C to stop)"
 while true; do
   for name in $(kubectl get greeters -n "$NS" -o jsonpath='{.items[*].metadata.name}'); do
     gr=$(kubectl get greeter "$name" -n "$NS" -o json 2>/dev/null) || continue # deleted meanwhile
     uid=$(jq -r .metadata.uid <<<"$gr")
-    msg=$(jq -r .spec.message <<<"$gr")
+    msg=$(jq .spec.message <<<"$gr")  # JSON-quoted, so it's also a safe YAML string
     replicas=$(jq -r '.spec.replicas // 1' <<<"$gr")
     # Desired state for this Greeter: a Deployment, owned by the Greeter.
     # The ownerReference means deleting the Greeter garbage-collects the Deployment.
@@ -39,7 +41,7 @@ spec:
           imagePullPolicy: Never
           env:
             - name: GREETING
-              value: "$msg"
+              value: $msg
 YAML
   done
   sleep 3

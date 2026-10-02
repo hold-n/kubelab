@@ -21,7 +21,8 @@ spec:
   containers:
     - name: shell
       image: busybox:1.37
-      command: ["sh", "-c", "date >> /data/log.txt; cat /data/log.txt; sleep infinity"]
+      # trap: as PID 1, sh would ignore SIGTERM and every delete would wait out the 30s grace period
+      command: ["sh", "-c", "trap 'exit 0' TERM; date >> /data/log.txt; cat /data/log.txt; sleep infinity & wait"]
       volumeMounts:
         - name: data
           mountPath: /data

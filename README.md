@@ -22,12 +22,14 @@ real multi-node cluster in this orb, and most end with a challenge.
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
-- **Kubernetes** v1.37 via [kind](https://kind.sigs.k8s.io) (Kubernetes-in-Docker): 1 control plane + 2 workers.
-- **cloud-provider-kind** gives `LoadBalancer` Services a reachable IP, like the AWS
-  Load Balancer Controller would give you an NLB.
-- **kubelab app** ([app/server.py](app/server.py)): a tiny HTTP service with knobs to crash, hang,
-  leak memory, burn CPU, and flip readiness, so you can watch Kubernetes respond.
-  Images `kubelab/app:v1` and `kubelab/app:v2` are built locally and side-loaded into the nodes.
+- **Kubernetes v1.37** via [kind](https://kind.sigs.k8s.io) (Kubernetes-in-Docker): one control
+  plane and two workers, each a Docker container pretending to be a machine.
+- **cloud-provider-kind** gives `LoadBalancer` Services a reachable IP, the way the AWS Load
+  Balancer Controller gives you an NLB on EKS.
+- **The kubelab app** ([app/server.py](app/server.py)): a tiny HTTP service with knobs to crash,
+  hang, leak memory, burn CPU and flip readiness, so you can break things on purpose and watch
+  Kubernetes respond. Images `kubelab/app:v1` and `kubelab/app:v2` are built locally and
+  side-loaded into the nodes; no registry is involved.
 
 ```bash
 ./cluster/up.sh     # create/repair the cluster (idempotent; re-run after an orb restart)
@@ -40,9 +42,9 @@ The whole course runs in the browser through an Amp portal:
 
 - **Lessons rendered as HTML**, with a sidebar, syntax-highlighted code and a viewer for every
   manifest the lessons link to.
-- **A built-in terminal** (the **▣ Terminal** button, or Ctrl+\`) that opens next to the text, at
-  the repo root. Every shell snippet has a **▶ Paste in terminal** button. It pastes the commands
-  without running them, so you can read them first and press Enter.
+- **A built-in terminal** (the **▣ Terminal** button, or Ctrl+\`) that opens beside the text, at
+  the repo root. Every shell snippet has a **▶ Paste in terminal** button, which pastes the
+  commands *without* running them: read them, then press Enter.
 - **Tool UIs** (Prometheus, Consul, Vault, and the lesson 09 Gateway), each on its own portal
   and listed in the **Tool UIs** menu with a live running/not-running status.
 - **Ask about anything:** select text on any page and use the portal's review button to send a
@@ -55,11 +57,15 @@ Only this thread's collaborators can use the terminal.
 
 ## How to work through it
 
-- Type the commands yourself rather than copy-pasting the whole block. Read the output.
-- Keep a second terminal open running `kubectl get pods -w` (or `watch kubectl get pods -o wide`).
-  Watching the cluster react is most of the learning.
-- `kubectl explain <thing>` is the built-in docs for every field, e.g. `kubectl explain deployment.spec.strategy`.
-- If something goes wrong, `./cluster/down.sh && ./cluster/up.sh` gives you a fresh cluster in about a minute.
+- Run commands a few at a time and read the output before moving on. The lessons tell you what
+  to look for; the output is where the learning is.
+- Keep a second terminal running `kubectl get pods -w` (or `watch kubectl get pods -o wide`).
+  Most of Kubernetes is things happening *on their own* after you change something, and this
+  is how you catch them in the act.
+- `kubectl explain <thing>` is built-in documentation for every field, e.g.
+  `kubectl explain deployment.spec.strategy`.
+- If you wreck the cluster, `./cluster/down.sh && ./cluster/up.sh` gives you a fresh one in a
+  minute or two.
 
 ## Lessons
 
@@ -87,22 +93,22 @@ Only this thread's collaborators can use the terminal.
 
 | AWS concept | Kubernetes counterpart | Notes |
 |---|---|---|
-| ECS task / task definition | Pod / pod template | One or more containers sharing network + volumes |
+| ECS task / task definition | Pod / pod template | One or more containers sharing an IP and volumes, always on one node |
 | ECS service, ASG desired count | Deployment (→ ReplicaSet) | Controller keeps N replicas running and handles rollouts |
 | CodeDeploy rolling / blue-green | Deployment `strategy`, Gateway API weights, Argo Rollouts | |
-| Cloud Map / internal ALB | Service (ClusterIP) + cluster DNS | `http://web.default.svc.cluster.local` |
+| Cloud Map / internal ALB | Service (ClusterIP) + cluster DNS | `http://web.default.svc.cluster.local`, or just `http://web` from the same namespace |
 | NLB | Service `type: LoadBalancer` | On EKS, provisioned by the AWS Load Balancer Controller |
 | ALB + listener rules | Gateway + HTTPRoute (or the older Ingress) | |
-| ELB health check / ECS health check | readinessProbe / livenessProbe | Readiness gates traffic; liveness restarts |
+| ELB health check / ECS container health check | readinessProbe / livenessProbe | Like ELB, readiness gates traffic; like ECS, liveness restarts |
 | SSM Parameter Store | ConfigMap | |
-| Secrets Manager | Secret (+ External Secrets Operator on EKS) | Base64, not encryption, by default |
-| IAM policy / role | Role, ClusterRole / RoleBinding | For access to the *Kubernetes API* |
-| Instance profile / task role | ServiceAccount (+ EKS Pod Identity for AWS APIs) | |
+| Secrets Manager | Secret (+ External Secrets Operator on EKS) | Base64-encoded, *not* encrypted: anyone who can read the Secret can read the value (EKS does encrypt etcd at rest) |
+| IAM policy / role | Role / ClusterRole + RoleBinding / ClusterRoleBinding | Controls access to the *Kubernetes API*, not to AWS |
+| Instance profile / task role | ServiceAccount (+ EKS Pod Identity or IRSA for AWS APIs) | The pod's identity |
 | AWS account / team boundary | Namespace (+ ResourceQuota, RBAC, NetworkPolicy) | Softer boundary than an account |
 | EBS volume | PersistentVolume (via PVC + StorageClass) | EBS CSI driver on EKS |
-| ASG target tracking | HorizontalPodAutoscaler | Scales pods; Karpenter / Cluster Autoscaler scale nodes |
-| AZ spread | `topologySpreadConstraints` on `topology.kubernetes.io/zone` | |
+| ECS service auto scaling (target tracking) | HorizontalPodAutoscaler | Scales pods; Karpenter / Cluster Autoscaler scale nodes (the ASG part) |
+| AZ spread | `topologySpreadConstraints` on `topology.kubernetes.io/zone` | This lab uses a plain `zone` label instead (lesson 10) |
 | AWS Batch / scheduled ECS task | Job / CronJob | |
 | ECS daemon scheduling | DaemonSet | |
-| CloudFormation template | YAML manifests; Helm chart / Kustomize for reuse | Continuously reconciled, not one-shot |
+| CloudFormation template | YAML manifests; Helm chart / Kustomize for reuse | Continuously reconciled, not applied once |
 | CloudFormation custom resource | CustomResourceDefinition + controller (an "operator") | |

@@ -1,22 +1,20 @@
 # 16 — The distributed-systems toolbox
 
-An overview of the infrastructure software you'll keep running into around Kubernetes:
-**Envoy, Istio, Prometheus, Vault, etcd, ZooKeeper, Consul, Kafka and Temporal**, plus a
-short list of others. For each one: what it is, the mental model, a few internals worth
-knowing, use cases, the AWS equivalent, and how it's run in practice. Most sections end
-with an optional 5–10 minute **Try it** on the lab cluster.
+Sooner or later someone will say "we put it on Kafka and Temporal behind Istio, with secrets
+from Vault" as if that were a complete sentence. This lesson makes it one. It's a map, not a
+deep dive, of the infrastructure software you'll keep meeting around Kubernetes: **Envoy,
+Istio, Prometheus, Vault, etcd, ZooKeeper, Consul, Kafka and Temporal**, plus a few others.
 
-This is a map, not a deep dive. The goal is that when someone says "we put it on Kafka and
-Temporal behind Istio, with secrets from Vault", you know what each piece does and why it's
-there.
+For each: the mental model, the internals worth knowing, the AWS equivalent, and how it's
+run in practice. Most end with an optional 5–10 minute **Try it** on the lab cluster.
 
 ---
 
 ## Part 1: how this stuff is actually run
 
-On AWS you rarely think about it: you create a resource in your account and AWS runs it.
-Outside AWS's managed services, *someone* has to run the software, and there are four
-common ways to do it. Most companies use a mix.
+On AWS you create a resource and AWS runs it. Step outside the managed services and
+*someone* has to run the software. There are four ways to do it, and most companies use all
+four somewhere.
 
 ```
  less ops work, less control                                       more ops work, more control
@@ -36,53 +34,48 @@ common ways to do it. Most companies use a mix.
                                             healing, rollouts
 ```
 
-1. **Cloud-managed**: the default choice on AWS when a service exists and fits. MSK is
-   Kafka, Amazon Managed Service for Prometheus (AMP) is Prometheus, and so on.
-2. **Vendor SaaS**: the company behind the open-source project runs it for you, usually in
-   your preferred cloud region, connected over PrivateLink or VPC peering. You pay a premium
-   and get the vendor's expertise and newest features.
-3. **Self-run on Kubernetes**: very common for platform teams today. The Kubernetes
-   primitives from this course (StatefulSets, PVCs, PDBs, anti-affinity) plus an
-   **operator** that encodes the runbook: "to upgrade Kafka, roll brokers one at a time and
-   wait for in-sync replicas". You just learned everything this needs.
-4. **Self-run on VMs**: the classic approach, and still common for big stateful systems
-   (large Kafka and ZooKeeper clusters, Vault, Consul). Something like: Terraform creates 3 or 5
-   instances across AZs, a Packer-built image or Ansible installs the binary and a systemd
-   unit, a load balancer or DNS name goes in front, and Prometheus plus alerting watch it.
-   Replacing a dead node is a runbook (or an ASG plus automation).
+1. **Cloud-managed:** the AWS default when a service exists and fits (MSK is Kafka, AMP is
+   Prometheus).
+2. **Vendor SaaS:** the company behind the project runs it in your region, reached over
+   PrivateLink or peering. You pay a premium for their expertise and newest features.
+3. **Self-run on Kubernetes:** common for platform teams. It's this course's primitives
+   (StatefulSets, PVCs, PDBs, anti-affinity) plus an **operator** that encodes the runbook:
+   "to upgrade Kafka, roll brokers one at a time and wait for in-sync replicas".
+4. **Self-run on VMs:** the classic, still common for big stateful systems (large Kafka
+   clusters, Vault, Consul). Terraform creates 3 or 5 instances across AZs, Packer or
+   Ansible installs the binary as a systemd unit, a load balancer goes in front. Replacing a
+   dead node is a runbook, or an Auto Scaling group plus automation.
 
-**So yes, "rent a few machines and deploy it" is option 4.** On AWS the machines are EC2
-instances. On-prem, they're servers you own.
+So yes, people really do rent a few machines and install Kafka on them. That's option 4.
 
 ### What "on-prem" actually means
 
-"On-prem" means running your own servers, either in your own data centre or in rented space
-in a colocation facility (Equinix and similar), where you rent power, cooling and network
-and bring your own racks. Without AWS, every layer AWS gave you needs a substitute:
+Your own servers, in your own data centre or in a colocation facility (Equinix and
+similar) that rents you power, cooling and network. Every layer AWS gave you needs a
+substitute:
 
 | AWS gives you | On-prem equivalent |
 |---|---|
-| EC2 | a virtualisation platform: **VMware vSphere**, **OpenStack**, **Proxmox**, or Kubernetes directly on bare metal; bare-metal provisioning with PXE boot, **MAAS**, **Tinkerbell** |
+| EC2 | a virtualisation platform (**VMware vSphere**, **OpenStack**, **Proxmox**) or Kubernetes on bare metal, provisioned with PXE boot, **MAAS** or **Tinkerbell** |
 | EBS / S3 | SAN/NAS appliances (NetApp, Pure), or **Ceph** (block + object), **MinIO** (S3 API) |
 | ELB | hardware or software load balancers: **F5**, **HAProxy**, **Envoy**; **MetalLB** for Kubernetes `LoadBalancer` Services |
 | VPC, security groups | physical network gear, VLANs, firewalls; **Cilium/Calico** NetworkPolicies |
 | IAM | **Active Directory / LDAP**, an OIDC provider (Keycloak, Okta), plus **Vault** for workload secrets |
 | Route 53 / Cloud Map | internal DNS (BIND, Infoblox), **Consul** |
 | CloudWatch | **Prometheus + Grafana + Loki**, or a vendor (Datadog…) |
-| Managed Kafka, databases | you run them yourself (see above) |
-| The AWS console | a **platform team** that operates all of this and offers it to product teams, often through an internal developer portal (e.g. **Backstage**) |
+| Managed Kafka, databases | you run them yourself |
+| The AWS console | a **platform team** that operates all of this for product teams, often behind an internal developer portal (e.g. **Backstage**) |
 
-That's why tools like Vault and Consul exist: they provide AWS-like capabilities
-(secrets, identity, service discovery) in environments that don't have them, and
-*consistently across* environments (on-prem + AWS + GCP). Large companies are very often
-**hybrid**: some data centres, some cloud, plus a platform team stitching them together.
+This is why Vault and Consul exist: they provide AWS-like capabilities (secrets, identity,
+discovery) where there is no AWS, and *the same way across* on-prem, AWS and GCP. Large
+companies are usually **hybrid**, with a platform team stitching it all together.
 
 ### A rule of thumb for AWS shops
 
-Use the managed service unless you have a concrete reason not to. Common reasons:
-cost at large scale (MSK vs self-run Kafka on EC2 or EKS can differ a lot), features the
-managed version lacks, a multi-cloud or hybrid requirement, or data-residency rules. Every
-self-run stateful system means upgrades, backups, capacity planning and a pager rotation.
+Use the managed service unless you have a concrete reason not to: cost at large scale
+(MSK versus self-run Kafka can differ a lot), a missing feature, a hybrid requirement, data
+residency. Every self-run stateful system is a permanent subscription to upgrades, backups,
+capacity planning and a pager.
 
 ---
 
@@ -112,19 +105,20 @@ A plausible e-commerce backend on EKS, showing where each tool sits:
        ZooKeeper: only if something old needs it (older Kafka, HBase, Solr, Hadoop)
 ```
 
-Two patterns show up again and again:
+Two patterns recur:
 
-- **Control plane vs data plane.** A central brain decides, and many distributed agents
-  do the work: Kubernetes (API server vs kubelets), Istio (istiod vs Envoys), Consul
-  (servers vs agents). When the control plane is down, the data plane keeps running on its
-  last known config.
+- **Control plane vs data plane.** A central brain decides; distributed agents do the work
+  (API server and kubelets, istiod and Envoys, Consul servers and agents). If the brain dies,
+  agents keep running on their last config: a control-plane outage means "no changes", not
+  "no traffic".
 - **A small, strongly consistent core.** Almost every system here has, at its centre, a
-  replicated log agreed on by a consensus protocol. That's worth understanding once, next.
+  replicated log agreed on by consensus. Worth understanding once.
 
 ### Consensus in one screen
 
 etcd, Consul servers, Vault (integrated storage) and Kafka's KRaft controllers all use
-**Raft**. ZooKeeper uses **ZAB**, a close cousin. Temporal hands this job to its database.
+**Raft**. ZooKeeper uses **ZAB**, a close cousin. Temporal outsources the problem to its
+database.
 
 ```
    client write ──▶ leader ──append entry──▶ follower 1   ✔
@@ -133,63 +127,64 @@ etcd, Consul servers, Vault (integrated storage) and Kafka's KRaft controllers a
                    log: [1 put a=1][2 put b=2][3 del a]...
 ```
 
-- A cluster of **N = 2f + 1** nodes tolerates **f** failures: 3 nodes survive 1 failure,
-  5 survive 2. A 4-node cluster survives only 1, and 2 nodes survive *none* (each needs
-  the other), so always use odd numbers, typically 3 or 5.
-- Every write needs a round trip to a majority. Keep members close (the AZs of one region,
-  not across continents), and don't expect these systems to absorb huge write volumes.
-  They store small, critical data: configuration, membership, leadership, metadata.
-- If you lose the majority, the cluster stops accepting writes rather than risk
-  split-brain. In CAP terms these are **CP** systems.
-- The AWS parallel: this is what's inside DynamoDB (Paxos), Aurora's storage quorum, and
-  every other AWS service that needs strong consistency. On AWS you consume it. With these
-  tools, you *run* it.
+- **N = 2f + 1** nodes tolerate **f** failures: 3 survive 1, 5 survive 2. A 4-node cluster
+  still survives only 1, and 2 nodes survive *none*. Hence odd numbers, usually 3 or 5.
+- Every write costs a round trip to a majority, so keep members close (one region's AZs, not
+  continents) and data small: configuration, membership, leadership, metadata.
+- Lose the majority and writes stop rather than risk split-brain. In CAP terms, **CP**.
+- DynamoDB (Paxos) and Aurora's storage quorum run the same machinery. On AWS you consume
+  it; with these tools, you *run* it.
 
 ---
 
 ## Part 3: the tools
 
-Set up the playground once (single-node dev instances, [toolbox.yaml](toolbox.yaml)). Once
-it's running, the course's **Tool UIs** menu links to the Prometheus, Consul and Vault web UIs.
+Set up the playground once: single-node, dev-mode instances of Kafka, Vault, ZooKeeper and
+Consul ([toolbox.yaml](toolbox.yaml)), plus the kubelab app with a traffic generator
+([metrics-demo.yaml](metrics-demo.yaml)) for Envoy and Prometheus to work with.
 
 ```bash
 cd lessons/16-distributed-systems-toolbox
 kubectl apply -f toolbox.yaml
-kubectl apply -f metrics-demo.yaml       # the kubelab app + a traffic generator (used by Envoy & Prometheus)
+kubectl apply -f metrics-demo.yaml
 kubectl -n toolbox wait --for=condition=Ready pod --all --timeout=180s
 ```
 
+The course's **Tool UIs** menu then links to the Consul and Vault web UIs (and Prometheus,
+once installed below). Some Try-its need two terminals: the course terminal is tmux, so
+`Ctrl-b %` splits it and `Ctrl-b o` switches panes.
+
 ### Envoy: the programmable proxy
 
-**What:** a high-performance L4/L7 proxy written in C++ (created at Lyft, open-sourced in
-2016). It's the data plane under Istio, Envoy Gateway, Consul's mesh, AWS App Mesh
-(discontinued September 2026), Contour and more. When people say "the mesh does retries"
-or "the gateway does canaries", Envoy is usually what's executing it.
+**What:** a high-performance L4/L7 proxy in C++, open-sourced by Lyft in 2016. It's the
+data plane under Istio, Envoy Gateway, Consul's mesh, Contour and the late AWS App Mesh
+(discontinued September 2026). When "the mesh does retries", Envoy is doing them.
 
-**Mental model:** a request flows through **listener → filter chain → route → cluster →
-endpoint**. Listeners bind ports. Filters (TLS, HTTP parsing, auth, rate limiting,
-Wasm/Lua extensions) process the connection and requests. The route table picks a
-**cluster** (a named group of upstream endpoints, like a target group), and the
-cluster's load balancer picks an endpoint.
+**Mental model:** **listener → filter chain → route → cluster → endpoint**. Listeners bind
+ports. Filters (TLS, HTTP parsing, auth, rate limiting, Wasm/Lua extensions) process the
+connection and its requests. A route picks a **cluster** (a named group of upstream
+endpoints, like a target group), whose load balancer picks an endpoint.
 
 **Worth knowing:**
-- **xDS APIs** (LDS/RDS/CDS/EDS/SDS for listeners, routes, clusters, endpoints and secrets):
-  config streams in over gRPC from a control plane and applies *without restarts* or
-  dropped connections. That's what made Envoy the universal data plane: anyone can write a
-  control plane for it.
-- Threading: one main thread plus N worker threads, each with its own event loop. A
-  connection stays on one worker for life, so the hot path needs almost no locking.
-- Resilience is built in: retries with budgets, timeouts, **outlier detection** (eject
-  endpoints that keep failing), circuit breakers (caps on connections and pending requests),
-  and rate limiting.
-- Very detailed stats (thousands of counters) and an admin API on each proxy (`/config_dump`, `/clusters`, `/stats/prometheus`).
+- **xDS APIs** (LDS/RDS/CDS/EDS/SDS: listeners, routes, clusters, endpoints, secrets):
+  config streams in over gRPC and applies *without restarts* or dropped connections. That's
+  what made Envoy the universal data plane: anyone can write a control plane for it.
+- Threading: one main thread plus N workers, each with its own event loop. A connection
+  stays on one worker for life, so the hot path needs almost no locking.
+- Built-in resilience: retries with budgets, timeouts, **outlier detection** (eject
+  endpoints that keep failing), circuit breakers (caps on connections and pending
+  requests), rate limiting.
+- Thousands of stats, and an admin API on every proxy (`/config_dump`, `/clusters`,
+  `/stats/prometheus`).
 
-**Use cases:** edge/API gateway, service-mesh sidecar, gRPC proxying and transcoding,
-TLS termination, traffic shifting. **AWS analog:** roughly what's inside an ALB, plus App
-Mesh / VPC Lattice. **How it's run:** almost never by hand. Istio, Envoy Gateway or Consul
-generate its config. Lesson 09 used Envoy through Envoy Gateway.
+**Use cases:** edge/API gateway, mesh sidecar, gRPC proxying, TLS termination, traffic
+shifting. **AWS analog:** roughly an ALB's insides, plus VPC Lattice. **How it's run:**
+almost never by hand: Istio, Envoy Gateway (lesson 09) or Consul generates its config.
 
-**Try it:** a standalone Envoy with a hand-written static config. Read [envoy.yaml](envoy.yaml) first.
+**Try it:** a standalone Envoy with a hand-written static config. Read
+[envoy.yaml](envoy.yaml) first: Envoy answers `/hello` itself and proxies `/app/` to the
+metrics-demo pods with a 1s timeout. A *headless* Service makes DNS return pod IPs, so Envoy
+does the load balancing rather than kube-proxy.
 
 ```bash
 kubectl apply -f envoy.yaml
@@ -197,7 +192,7 @@ kubectl -n toolbox wait --for=condition=Ready pod/envoy
 kubectl -n toolbox port-forward pod/envoy 10000:10000 9901:9901 &
 
 curl -s localhost:10000/hello                                 # answered by Envoy itself
-for i in 1 2 3 4; do curl -s localhost:10000/app/ | grep '"pod"'; done   # round-robin across both pods
+for i in 1 2 3 4; do curl -s localhost:10000/app/ | grep '"pod"'; done   # alternates between the two pods
 curl -s -o /dev/null -w '%{http_code}\n' 'localhost:10000/app/?delay=2'  # 504: route timeout is 1s
 
 curl -s localhost:9901/clusters | grep metrics_demo | grep -E 'rq_total|health_flags'
@@ -206,77 +201,81 @@ curl -s localhost:9901/config_dump | jq -r '.configs[]."@type"'   # listeners, r
 kill %1
 ```
 
+The admin API is Envoy's view of the world: `/clusters` gives each pod's request count and
+health (`healthy` unless outlier detection ejected it), `/stats` counts 4 successes and 1
+timeout, and `/config_dump` is the running config, one section per xDS type. Under Istio,
+that's where you look when the mesh misbehaves.
+
 ### Istio: the service mesh
 
-**What:** a service mesh. It moves networking concerns out of application code and into
-the platform: **mTLS between all services, fine-grained traffic control, retries/timeouts,
-and uniform telemetry**, with no code changes.
+**What:** a service mesh. It moves networking out of application code and into the
+platform: **mTLS everywhere, traffic control, retries and timeouts, uniform telemetry**,
+with no code changes.
 
-**Mental model:** **istiod** (the control plane) watches Kubernetes and Istio CRDs,
-compiles them into Envoy config, and pushes it over xDS to the data plane. It also acts as a
-certificate authority, issuing each workload a short-lived certificate tied to its
-ServiceAccount (a SPIFFE identity like `spiffe://cluster.local/ns/shop/sa/orders`).
-Two data-plane modes:
+**Mental model:** **istiod**, the control plane, compiles Kubernetes and Istio CRDs into
+Envoy config and pushes it over xDS. It's also a certificate authority, giving each workload
+a short-lived certificate for its ServiceAccount: a SPIFFE identity like
+`spiffe://cluster.local/ns/shop/sa/orders`. Two data-plane modes:
 
-- **Sidecar mode** (classic): an Envoy container injected into every pod. Traffic is
-  redirected into it with iptables. It's powerful, but costs CPU and memory per pod and adds
-  latency on every hop.
-- **Ambient mode** (GA since late 2024): a per-node **ztunnel** (a lightweight Rust
-  proxy) handles mTLS and L4, and optional per-namespace **waypoint** Envoys handle L7. It's
-  cheaper, with no sidecars to inject or restart.
+- **Sidecar** (classic): an Envoy injected into every pod, traffic redirected into it by
+  iptables. Powerful, but costs CPU and memory per pod, adds latency per hop, and upgrading
+  the mesh means restarting every pod.
+- **Ambient** (GA since Istio 1.24, November 2024): a per-node **ztunnel** (a small Rust
+  proxy) does mTLS and L4; optional **waypoint** Envoys do L7 where needed. Cheaper, and
+  nothing to inject.
 
 **Worth knowing:** the key CRDs are `PeerAuthentication` (require mTLS),
 `AuthorizationPolicy` (which identity may call which service: "zero trust" by
-ServiceAccount, not IP), `VirtualService`/`DestinationRule` (routing, retries, subsets),
-and increasingly the standard Gateway API (lesson 09). A mesh is also *the* answer to
-"which service calls which, and with what latency?", because every hop emits metrics and
-traces.
+ServiceAccount, not IP), and `VirtualService`/`DestinationRule` (routing, retries, subsets),
+increasingly replaced by lesson 09's Gateway API. Because every hop emits metrics and
+traces, a mesh also answers "which service calls which, and how slowly?".
 
-**Use cases:** compliance-driven encryption in transit, zero-trust between services,
-canaries and fault injection, multi-cluster traffic. **Costs:** operational complexity
-(it's a distributed system in its own right), upgrades, and harder debugging when the
-mesh itself misbehaves. Many teams adopt it only when they have a concrete need.
-Alternatives: **Linkerd** (simpler, Rust proxy), **Cilium** (eBPF-based, in the kernel).
-**AWS analog:** VPC Lattice plus App Mesh (discontinued). **How it's run:** installed per
-cluster with `istioctl` or Helm, and upgraded carefully with revision-based canary
-upgrades of the control plane.
+**Use cases:** compliance-driven encryption in transit, zero trust, canaries and fault
+injection, multi-cluster traffic. **Costs:** a mesh is a distributed system in its own
+right, and debugging gets harder when the mesh itself misbehaves. Many teams adopt one only
+when they hit a concrete need.
+**Alternatives:** **Linkerd** (simpler, Rust proxy), **Cilium** (eBPF, in the kernel).
+**AWS analog:** VPC Lattice (App Mesh was closer, but is discontinued). **How it's run:**
+per cluster with `istioctl` or Helm; upgrades run a new control-plane revision alongside the
+old one and move namespaces over gradually. (No Try it: a mesh is too heavy for this lab,
+and you've already seen its engine.)
 
 ### Prometheus: metrics and alerting
 
-**What:** a time-series database plus a query language (PromQL) plus an alerting engine,
-and the de facto standard for metrics in the Kubernetes world. It came out of SoundCloud in
-2012, inspired by Google's Borgmon, and was the second CNCF project after Kubernetes.
+**What:** a time-series database, query language (PromQL) and alerting engine in one
+binary; the de facto metrics standard around Kubernetes. Built at SoundCloud in 2012 after
+Google's Borgmon, it was the second CNCF project after Kubernetes.
 
-**Mental model:** **pull-based**. Services expose `GET /metrics` in a simple text format,
-and Prometheus discovers targets (from the Kubernetes API, EC2 API, Consul…) and
-**scrapes** them every 15–60s. Each series is identified by a metric name plus labels,
-such as `http_requests_total{service="orders",code="500"}`. Metric types are **counter**
-(only goes up; always query it with `rate()`), **gauge**, **histogram** (buckets, which
-give you percentiles across pods) and summary.
+**Mental model:** **pull-based**. Services expose `GET /metrics` as plain text; Prometheus
+discovers targets (via the Kubernetes API, EC2, Consul…) and **scrapes** them every 15–60s.
+A series is a name plus labels, like `http_requests_total{service="orders",code="500"}`.
+Types: **counter** (only goes up; always query through `rate()`), **gauge**, **histogram**
+(buckets, so you can compute percentiles across pods) and summary.
+
+Why pull? Because then Prometheus knows what *should* exist. A dead target shows up as
+`up == 0`; a pushed metric that stops arriving looks just like a quiet service.
 
 **Worth knowing:**
-- Storage: an append-only, heavily compressed local TSDB (about 1–2 bytes per sample, using
-  Gorilla-style delta-of-delta and XOR encoding), cut into 2-hour blocks plus a WAL.
-  A single server is deliberately *not* clustered. For HA you run two identical ones, and for
-  long retention and a global view you add **Thanos** or **Grafana Mimir**, or remote-write
-  to a managed service.
-- **Cardinality is the #1 way to kill it.** Every unique label combination is a new
-  series, so never put user IDs, request IDs or raw URLs in labels. (The kubelab app
-  normalises unknown paths to `other` for exactly this reason. See
-  [server.py](../../app/server.py).)
-- **Alertmanager** receives firing alerts and deduplicates, groups, silences and routes
-  them (PagerDuty, Slack). Alert rules are PromQL expressions.
-- It's for *metrics*: aggregated numbers. Not logs, not per-request traces, and not
-  billing-grade exact counts.
-- The **Prometheus Operator** / kube-prometheus-stack adds CRDs (`ServiceMonitor`,
-  `PodMonitor`, `PrometheusRule`), which is how most EKS clusters run it.
+- Storage: a local append-only TSDB, about 1–2 bytes per sample (Gorilla-style
+  delta-of-delta and XOR encoding), in 2-hour blocks plus a WAL. Deliberately *not*
+  clustered: for HA run two identical servers; for long retention and a global view add
+  **Thanos** or **Grafana Mimir**, or remote-write to a managed service.
+- **Cardinality is the #1 way to kill it.** Each unique label combination is a new series,
+  so user IDs, request IDs or raw URLs in labels eventually eat all its memory. (The kubelab
+  app maps unknown paths to `other` for this reason; see [server.py](../../app/server.py).)
+- **Alertmanager** deduplicates, groups, silences and routes firing alerts (PagerDuty,
+  Slack). Alert rules are just PromQL expressions.
+- It's for aggregated *metrics*: not logs, traces or billing-grade exact counts.
+- The **Prometheus Operator** (usually via kube-prometheus-stack) adds `ServiceMonitor`,
+  `PodMonitor` and `PrometheusRule` CRDs. That's how most EKS clusters run it.
 
-**AWS analog:** CloudWatch Metrics + Alarms (push-based). Amazon Managed Service for
-Prometheus runs the storage/query side for you, and you keep scraping in-cluster.
-**How it's run:** one Prometheus per cluster (Helm or operator), plus Grafana, plus Thanos
-or Mimir or AMP for the long-term, multi-cluster view.
+**AWS analog:** CloudWatch Metrics + Alarms (push-based). AMP runs the storage and query
+side; you still scrape in-cluster. **How it's run:** one Prometheus per cluster (Helm or
+operator), plus Grafana, plus Thanos, Mimir or AMP for the long-term, multi-cluster view.
 
-**Try it:**
+**Try it:** install the community chart (Helm: lesson 08) without the parts we don't need.
+It brings **kube-state-metrics** (Kubernetes objects as metrics) and **node-exporter** (a
+DaemonSet exposing each node's CPU, memory and disk).
 
 ```bash
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
@@ -290,7 +289,9 @@ kubectl get --raw /metrics | grep '^apiserver_request_total' | head -3          
 kubectl -n monitoring port-forward svc/prom-prometheus-server 9090:80 &
 ```
 
-Wait about 2 minutes (it scrapes once a minute and `rate()` needs two samples), then query:
+Prometheus finds the metrics-demo pods through their `prometheus.io/scrape` annotations
+(see [metrics-demo.yaml](metrics-demo.yaml)). Wait about 2 minutes (it scrapes once a
+minute, and `rate()` needs two samples), then query:
 
 ```bash
 q() { curl -s localhost:9090/api/v1/query --data-urlencode "query=$1" | jq -r '.data.result[] | "\(.metric | del(.__name__) | tostring)  \(.value[1])"'; }
@@ -302,50 +303,56 @@ q 'sum by (instance) (rate(node_cpu_seconds_total{mode!="idle"}[5m]))'          
 kill %1
 ```
 
-Then open **Tool UIs → Prometheus** in the course header and run the same queries in the UI.
-Switch to the **Graph** tab to watch them over time, and look at **Status → Targets** to see
-everything Prometheus discovered through the Kubernetes API.
+`up` is `1` for both pods. `/` gets twice the rate of `other` (the 404s): the generator
+hits `/` twice (once with `?delay=`) per `/does-not-exist`. The p99 is about 0.4–0.5s
+because the delays (up to 0.3s) land in the 0.25–0.5s bucket and `histogram_quantile`
+interpolates within it: an estimate, not a measurement.
+
+Then try the queries in **Tool UIs → Prometheus**: **Graph** plots them over time, and
+**Status → Targets** lists everything discovered.
 
 ### Vault: secrets, identity and encryption
 
-**What:** a secrets-management server from HashiCorp. It's much more than a key/value
-store for passwords. Its killer features are **dynamic secrets** and **encryption as a service**.
+**What:** HashiCorp's secrets server. Its killer features aren't storing passwords but
+**dynamic secrets** and **encryption as a service**.
 
-**Mental model:** everything is a **path**, mounted on a **secrets engine**:
+**Mental model:** everything is a **path**, served by a mounted **secrets engine**:
 
 - `kv/`: static secrets (versioned key/value).
-- `database/`: **dynamic credentials**. `vault read database/creds/orders-ro` makes Vault
-  create a brand-new database user with a 1-hour **lease**, and drop it when the lease
-  expires. Nothing long-lived to leak or rotate.
-- `pki/`: Vault is a certificate authority that issues short-lived TLS certificates.
-- `transit/`: encrypt/decrypt/sign on request. Apps never hold the key (think KMS `Encrypt`/`Decrypt`).
-- `aws/`: generate short-lived IAM credentials.
+- `database/`: **dynamic credentials**. `vault read database/creds/orders-ro` creates a
+  brand-new database user with a 1-hour **lease** and drops it on expiry. Nothing
+  long-lived to leak or rotate.
+- `pki/`: Vault as a certificate authority for short-lived TLS certificates.
+- `transit/`: encrypt, decrypt and sign on request; the app never holds the key (think
+  KMS `Encrypt`/`Decrypt`).
+- `aws/`: short-lived IAM credentials.
 
-Clients log in with an **auth method** (a Kubernetes ServiceAccount token, AWS IAM, OIDC,
-AppRole) and get a **token** carrying **policies** (paths plus capabilities like `read`,
-`create`). It's IAM-style, for secrets.
+Clients log in with an **auth method** (Kubernetes ServiceAccount token, AWS IAM, OIDC,
+AppRole) and get a **token** carrying **policies**: paths plus capabilities like `read`.
+IAM, for secrets.
 
 **Worth knowing:**
-- **Seal/unseal:** all data is encrypted with a key that's itself encrypted by a root key.
-  At startup Vault is *sealed* and can't read its own storage until unsealed, either by a
-  quorum of operators entering **Shamir key shares** (by default 3 of 5), or automatically
-  with **auto-unseal** via AWS KMS / HSM (what everyone does in practice).
-- HA via **integrated storage (Raft)**: 3 or 5 nodes, one active, the others standby.
-- Every request is written to audit logs, which is a big reason security teams like it.
-- Licensing: HashiCorp moved to the BSL licence in 2023 (IBM acquired the company in 2025),
-  and **OpenBao** is the community fork under the Linux Foundation.
-- Kubernetes integration: the **Vault Secrets Operator** (syncs into Secrets), the Agent
-  Injector (a sidecar that writes secrets to files), or the CSI provider.
+- **Seal/unseal:** data is encrypted with a key that is itself encrypted by a root key. At
+  startup Vault is *sealed* and can't read its own storage until a quorum of operators enter
+  **Shamir key shares** (3 of 5 by default) or, as nearly everyone does, it **auto-unseals**
+  via AWS KMS or an HSM.
+- HA via **integrated storage (Raft)**: 3 or 5 nodes, one active, the rest standby.
+- Every request goes to an audit log, a big reason security teams like it.
+- Licensing: HashiCorp moved Vault and Consul to the source-available BSL in 2023; IBM
+  bought HashiCorp in 2025 (hence 2026's jump to version 2.0: IBM versioning, not a
+  rewrite). **OpenBao** is the open-source fork, under the Linux Foundation.
+- On Kubernetes: the **Vault Secrets Operator** (syncs into Secrets), the Agent Injector (a
+  sidecar writing secrets to files), or the CSI provider.
 
-**Use cases:** hybrid or multi-cloud secrets, dynamic DB credentials, an internal PKI for
-mTLS, encryption of sensitive fields (card data, PII). **AWS analog:** Secrets Manager +
-KMS + ACM Private CA + STS, unified. On pure AWS those are usually enough. Vault earns its
-place in hybrid and multi-cloud setups, or where dynamic secrets are required.
-**How it's run:** a 3- or 5-node Raft cluster on VMs or Kubernetes (official Helm chart),
-KMS auto-unseal, behind a load balancer, often run by a security/platform team as a
-company-wide service. Or HCP Vault Dedicated (managed by HashiCorp).
+**Use cases:** hybrid or multi-cloud secrets, dynamic DB credentials, internal PKI for
+mTLS, encrypting sensitive fields (card data, PII). **AWS analog:** Secrets Manager + KMS +
+ACM Private CA + STS, unified. On pure AWS those usually suffice; Vault earns its place in
+hybrid setups or where dynamic secrets are required. **How it's run:** a 3- or 5-node Raft
+cluster on VMs or Kubernetes (official Helm chart) with KMS auto-unseal, often as a
+company-wide service run by a security or platform team. Or HCP Vault Dedicated.
 
-**Try it:**
+**Try it:** the toolbox Vault is in dev mode (in-memory, unsealed, root token `root`), and
+the pod's environment points the CLI at it.
 
 ```bash
 V="kubectl -n toolbox exec vault -- vault"
@@ -370,43 +377,50 @@ VAULT_TOKEN=$T vault kv put secret/myapp db_password=pwned   # permission denied
 EOF
 ```
 
-Open **Tool UIs → Vault** and sign in with the token `root` to browse the same secrets, the
-`transit` key and the `myapp-read` policy in Vault's UI.
+Transit takes base64 (so it can encrypt binary) and returns ciphertext like `vault:v1:…`,
+where `v1` is the key version: rotate the key and new data uses `v2` while old ciphertext
+still decrypts. Note that the policy says `secret/data/myapp`, not `secret/myapp`: KV
+version 2 stores data under a `data/` sub-path, which the CLI hides and policies don't. It's
+Vault's most common "why is this denied?".
+
+**Tool UIs → Vault** (token `root`) shows the same secret, key and policy.
 
 ### etcd: the consistent key-value store you already run
 
-**What:** a Raft-based, strongly consistent key-value store (from CoreOS). It's
+**What:** a Raft-based, strongly consistent key-value store, originally from CoreOS, and
 **Kubernetes' database**: every object you've created in this course lives here.
 
-**Mental model:** a flat, ordered keyspace with **MVCC**. Every change gets a
-cluster-wide increasing **revision**, you can read "as of" a revision, and a **watch** can
-stream every change after revision N. The Kubernetes API server's watches (which drive
-every controller) are built directly on etcd watches. **Leases** (TTL'd keys) support
-leader election and liveness.
+**Mental model:** a flat, ordered keyspace with **MVCC**. Every change gets a cluster-wide,
+increasing **revision**; you can read "as of" a revision, and a **watch** streams every
+change after revision N. The API server's watches, which drive every controller, are etcd
+watches underneath, and every object's `resourceVersion` is an etcd revision. **Leases**
+(keys with a TTL) support leader election and liveness.
 
-**Worth knowing:** keep it small and fast. The default quota is 2 GB and around 8 GB is the
-recommended maximum, because it's metadata storage, not a general database. Disk fsync
-latency makes or breaks it, which is why control-plane nodes need fast SSDs. On EKS it's
-fully hidden and managed by AWS.
+**Worth knowing:** the default quota is 2 GiB and ~8 GiB the recommended maximum: it holds
+metadata, not data. Disk fsync latency makes or breaks it, hence fast SSDs on control-plane
+nodes. On EKS, AWS hides and manages it entirely.
 
-**Try it:** look at Kubernetes' raw storage.
+**Try it:** Kubernetes' raw storage. etcd runs as a static pod on the control-plane node;
+`etcdctl` needs the cluster's client certificates.
 
 ```bash
 E="kubectl -n kube-system exec etcd-lab-control-plane -- etcdctl --endpoints=https://127.0.0.1:2379 \
   --cacert=/etc/kubernetes/pki/etcd/ca.crt --cert=/etc/kubernetes/pki/etcd/server.crt --key=/etc/kubernetes/pki/etcd/server.key"
 $E member list -w table
-$E endpoint status -w table                 # leader, Raft term/index, DB size
+$E endpoint status -w table                 # leader, Raft term/index, DB size, quota
 $E get /registry/namespaces --prefix --keys-only
 $E get / --prefix --keys-only | grep -c .   # every object in the cluster
 ```
 
-Watch it the way a controller would. Run this in one terminal:
+One member (production has 3 or 5), and it's the leader. Keys look like
+`/registry/<resource>/<namespace>/<name>`; values are binary protobuf. Now watch the way a
+controller does. In the terminal where you defined `$E`:
 
 ```bash
 $E watch --prefix /registry/configmaps/toolbox/ -w json | jq -r '.Events[] | "\(if .type == 1 then "DELETE" else "PUT" end) \(.kv.key | @base64d) rev=\(.kv.mod_revision)"'
 ```
 
-and in another:
+and in a second one:
 
 ```bash
 kubectl -n toolbox create configmap watched --from-literal=color=blue
@@ -414,87 +428,87 @@ kubectl -n toolbox patch configmap watched -p '{"data":{"color":"green"}}'
 kubectl -n toolbox delete configmap watched
 ```
 
-You'll see PUT, PUT, DELETE, each with a new revision.
+The watch prints PUT, PUT, DELETE with rising revisions; gaps are writes elsewhere in the
+cluster, since the counter is global. `Ctrl-C` stops it.
 
 ### ZooKeeper: the original coordination service
 
-**What:** Apache ZooKeeper (from Yahoo, inspired by Google's Chubby paper) is a replicated,
-strongly consistent store for *coordination*: leader election, locks, group membership,
-configuration. For a decade it was the thing every distributed system leaned on (Hadoop,
-HBase, Kafka, Solr, Storm, Mesos).
+**What:** Apache ZooKeeper (from Yahoo, after Google's Chubby paper) is a replicated,
+strongly consistent store for *coordination*: leader election, locks, membership, config.
+For a decade everything leaned on it: Hadoop, HBase, Kafka, Solr, Storm, Mesos.
 
-**Mental model:** a tree of **znodes**, like a filesystem, each holding a small blob
-(< 1 MB, usually bytes). Three primitives make it powerful:
+**Mental model:** a tree of **znodes**, like a filesystem, each holding a small blob (under
+1 MB, usually a few bytes). Three primitives make it powerful:
 
-- **Ephemeral znodes** are deleted automatically when the client's session ends. If a
-  process dies, its session times out and its node disappears. That's failure detection
-  for free.
-- **Sequential znodes** get an auto-incrementing suffix (`candidate-0000000007`), which
-  gives you a total order.
+- **Ephemeral znodes** vanish when the client's session ends. A process dies, its session
+  times out, its node disappears: failure detection for free.
+- **Sequential znodes** get an auto-incrementing suffix (`candidate-0000000007`): a total
+  order.
 - **Watches** are one-shot notifications when a node or its children change.
 
-**Leader election recipe:** everyone creates an ephemeral sequential node under `/election`,
-and the lowest number is leader. Everyone else watches *the node just before theirs*, which
-avoids a thundering herd. When the leader dies, its node vanishes and the next in line is
-notified.
+**Leader election:** everyone creates an ephemeral sequential node under `/election`; the
+lowest number leads. Everyone else watches *the node just before theirs*, not the leader, so
+when the leader dies exactly one client wakes up (no thundering herd), and it's now the
+lowest.
 
-**Worth knowing:** consensus via **ZAB**. Writes go through the leader and are
-linearizable, while reads are served locally by any node (fast, possibly stale; `sync`
-first if that matters). **Apache Curator** is the Java library that implements the recipes
-correctly. It's legacy-ish now: **Kafka 4.0 (2025) dropped ZooKeeper** for its own Raft
-(KRaft), and new systems tend to embed Raft or use etcd. You'll still meet it in older
-Kafka, HBase, Solr and Hadoop clusters.
-**AWS analog:** nothing direct. The closest are DynamoDB conditional writes / lock clients.
-**How it's run:** a 3- or 5-node "ensemble" on VMs or a StatefulSet, usually bundled with
-whatever needs it.
+**Worth knowing:** consensus is **ZAB**. Writes go through the leader and are linearizable;
+any node serves reads locally (fast, possibly stale; `sync` first if that matters). **Apache
+Curator** implements the recipes correctly, which is harder than it looks. ZooKeeper is
+legacy-ish now: **Kafka 4.0 (March 2025) removed it** for its own Raft (KRaft), and new
+systems embed Raft or use etcd. You'll still meet it in older Kafka, HBase, Solr and Hadoop.
+**AWS analog:** nothing direct; DynamoDB conditional writes (and lock clients built on them)
+come closest. **How it's run:** a 3- or 5-node "ensemble" on VMs or a StatefulSet, usually
+bundled with whatever needs it.
 
-**Try it:** ephemeral nodes and watches. Open **two** terminals with the ZooKeeper shell:
+**Try it:** ephemeral nodes and watches. Open the ZooKeeper shell in **two** terminals:
 
 ```bash
 kubectl -n toolbox exec -it zk -- zkCli.sh      # in both terminals
 ```
 
-Terminal A:
+Terminal A creates the election and a candidate:
 
 ```
 create /election ""
-create -s -e /election/candidate- node-a      # ephemeral + sequential
+create -s -e /election/candidate- node-a      # -s sequential, -e ephemeral
 ```
 
-Terminal B:
+Terminal B lists the candidates and sets a watch:
 
 ```
-ls -w /election                               # see candidate-0000000000, and set a watch
+ls -w /election                               # [candidate-0000000000]
 ```
 
-Terminal A: type `quit`. Terminal B immediately gets `WatchedEvent ... NodeChildrenChanged`,
-and `ls /election` is now empty. That's how "the leader died, elect a new one" works.
-Watches are **one-shot**: after firing, the client has to re-read and set a new watch (and
-may miss intermediate changes in between, so it re-reads state rather than trusting events). (If a
-client *crashes* instead of quitting cleanly, the node lingers until the session timeout,
-30s here. That timeout is the failure detector.)
+Type `quit` in A. B immediately prints `WatchedEvent state:SyncConnected
+type:NodeChildrenChanged path:/election`, and `ls /election` there returns `[]`: the leader
+died, elect a new one.
+
+Two subtleties. Watches are **one-shot**: the client must re-read and re-watch, and can
+miss changes in between, so an event means "go look", not "here's the state". And A quit
+*cleanly*, deleting its node at once; a *crashed* client's node lingers until the session
+times out (30s here). That timeout is the failure detector, and tuning it is the eternal
+trade between fast failover and false alarms.
 
 ### Consul: service discovery and mesh across everything
 
-**What:** HashiCorp Consul does **service discovery with health checking**, a **KV store**,
-and a **service mesh**. Its selling point is that it spans *everything*: VMs, bare metal,
-multiple Kubernetes clusters, multiple data centres and clouds.
+**What:** HashiCorp Consul: **service discovery with health checks**, a **KV store** and a
+**service mesh**, spanning *everything*: VMs, bare metal, many Kubernetes clusters, data
+centres and clouds.
 
-**Mental model:** 3 or 5 **servers** (Raft, holding the catalog and KV) plus an **agent** on
-every node. Agents register local services, run their health checks, and form a **gossip**
-pool (Serf, a SWIM-based protocol) for membership and failure detection that scales to
-thousands of nodes without hammering the servers. Services are found through **DNS**
-(`orders.service.consul`, returning only healthy instances) or the HTTP API. **Consul
-Connect** is the mesh: Envoy sidecars plus mTLS plus **intentions** ("web may call orders").
+**Mental model:** 3 or 5 **servers** (Raft, holding the catalog and KV) plus an **agent**
+on every node. Agents register local services, run their health checks, and form a
+**gossip** pool (Serf, based on SWIM) for membership and failure detection that scales to
+thousands of nodes without hammering the servers. Clients find services via **DNS**
+(`orders.service.consul` returns only healthy instances) or HTTP. The mesh (formerly
+"Connect") is Envoy sidecars plus mTLS plus **intentions** ("web may call orders").
 
-**Worth knowing:** within a single Kubernetes cluster you mostly *don't* need it.
-Kubernetes Services, CoreDNS and etcd already do discovery. Consul earns its keep when
-workloads live outside Kubernetes, or across many clusters and data centres (WAN
-federation / cluster peering). It was historically also Vault's storage backend. It's under
-the same BSL licensing situation as Vault.
-**AWS analog:** Cloud Map + Route 53 health checks + (retired) App Mesh / VPC Lattice + AppConfig.
-**How it's run:** servers on VMs or Kubernetes (Helm chart), and agents on every VM or as a
-DaemonSet. Usually a platform team runs it next to Vault and Nomad (the "HashiStack").
+**Worth knowing:** inside one Kubernetes cluster you mostly *don't* need it: Services and
+CoreDNS already do discovery. Consul earns its keep when workloads live outside Kubernetes
+or span clusters and data centres (WAN federation, cluster peering). It was historically
+Vault's storage backend, and has the same BSL licence.
+**AWS analog:** Cloud Map + Route 53 health checks + VPC Lattice + AppConfig. **How it's
+run:** servers on VMs or Kubernetes (Helm chart), agents on every VM or as a DaemonSet.
+Usually a platform team runs it next to Vault and Nomad (the "HashiStack").
 
 **Try it:**
 
@@ -509,16 +523,16 @@ $C kv put config/orders/max_conns 100
 $C kv get config/orders/max_conns
 ```
 
-In real life, services register themselves through the local agent, which runs health checks
-and takes failing instances out of DNS automatically.
-
-Open **Tool UIs → Consul** to see the same catalog, instances and key/value data in Consul's UI.
+DNS returns both `orders` addresses, so anything that can resolve a hostname can use
+Consul, no client library needed. (The IPs are made up and unchecked; real services register
+through their local agent, whose health checks pull failing instances out of DNS.) **Tool
+UIs → Consul** shows the same catalog and KV.
 
 ### Kafka: the distributed commit log
 
-**What:** Apache Kafka (from LinkedIn, 2011; Confluent is the company behind it) is a
-distributed, replicated, **append-only log**. It's the backbone for event streaming:
-services publish facts ("OrderPlaced"), and any number of consumers read them at their own pace.
+**What:** Apache Kafka (open-sourced by LinkedIn in 2011; its creators founded Confluent)
+is a distributed, replicated, **append-only log**: the backbone of event streaming. Services
+publish facts ("OrderPlaced"); any number of consumers read them at their own pace.
 
 **Mental model:**
 
@@ -532,40 +546,40 @@ topic "orders" (3 partitions, replication factor 3)
   consumer group "analytics":  independent offsets, can replay from 0
 ```
 
-- A record's **key** picks its partition (by hash), so **ordering is guaranteed only
-  within a partition**. Key by `customer_id` and each customer's events stay in order.
+- A record's **key** picks its partition (by hash), so **ordering is guaranteed only within
+  a partition**. Key by `customer_id` and each customer's events stay in order.
 - **Consumer groups:** each partition is read by exactly one member of a group, so
-  parallelism is capped at the partition count. Extra consumers sit idle. Choose the
-  partition count with future throughput in mind.
-- Messages aren't deleted when read. **Retention** is by time or size (or forever with
-  **log compaction**, which keeps the latest value per key). New consumers can replay
-  history, which is the big difference from a queue.
+  parallelism is capped at the partition count and extra consumers sit idle. Size
+  partitions for future throughput.
+- Reading deletes nothing. **Retention** is by time or size (or forever with **log
+  compaction**, keeping the latest value per key), so new consumers can replay history.
+  That's the big difference from a queue.
 
 **Worth knowing:**
-- It's fast because of sequential disk I/O, the OS page cache, zero-copy `sendfile`,
-  batching and compression, rather than anything clever in memory.
-- Durability: each partition has a leader and followers, and the **ISR** (in-sync replicas)
-  set. With `acks=all` and `min.insync.replicas=2` at RF=3, an acknowledged write survives
-  losing a broker.
-- Delivery is at-least-once by default. Idempotent producers plus transactions give
-  exactly-once *within Kafka* (consume → process → produce). Make external side effects idempotent.
-- **KRaft:** since 4.0, Kafka's metadata lives in a built-in Raft quorum of controllers,
-  so no ZooKeeper.
+- It's fast because of boring things done well: sequential I/O, the page cache, zero-copy
+  `sendfile`, batching, compression.
+- Durability: each partition has a leader, followers and an **ISR** (in-sync replicas) set.
+  With `acks=all` and `min.insync.replicas=2` at replication factor 3, an acknowledged write
+  survives losing a broker.
+- At-least-once by default. Idempotent producers plus transactions give exactly-once
+  *within Kafka* (consume → process → produce); external side effects must be idempotent.
+- **KRaft:** since 4.0, metadata lives in a built-in Raft quorum of controllers. No
+  ZooKeeper.
 - The ecosystem: **Kafka Connect** (source and sink connectors), **Debezium** (change data
-  capture from databases), **Kafka Streams** / **Flink** (stream processing), Schema Registry
-  (Avro/Protobuf contracts).
+  capture from databases), **Kafka Streams** and **Flink** (stream processing), Schema
+  Registry (Avro/Protobuf contracts).
 
 **Use cases:** event-driven microservices, CDC pipelines, feeding data lakes and search
-indexes, activity tracking, log aggregation, event sourcing.
-**AWS analog:** **MSK** (managed Kafka) or **Kinesis Data Streams** (shards ≈ partitions,
-same log model). It's *not* SQS: SQS is a queue where each message goes to one consumer,
-is deleted on ack, can't be replayed, and has no partitions to size. Use SQS for work
-distribution, and Kafka/Kinesis for event streams many consumers need.
-**How it's run:** 3+ brokers across AZs plus 3 KRaft controllers, on VMs or with the
-**Strimzi** operator on Kubernetes (Kafka as CRDs). Or MSK / Confluent Cloud. Also look at
-**Redpanda** (Kafka-API compatible, C++) and **WarpStream**-style "brokers on S3" designs.
+indexes, activity tracking, event sourcing. **AWS analog:** **MSK**
+(managed Kafka) or **Kinesis Data Streams** (shards ≈ partitions, same log model). It's
+*not* SQS, a queue where each message goes to one consumer and is deleted on ack: no
+replay, no partitions. SQS distributes work; Kafka and Kinesis carry event streams that many
+consumers need. **How it's run:** 3+ brokers across AZs plus 3 KRaft controllers, on VMs or
+via the **Strimzi** operator (Kafka as CRDs); or MSK, or Confluent Cloud. See also
+**Redpanda** (Kafka-compatible, C++) and **WarpStream**-style designs that keep data in S3.
 
-**Try it:** partitions, keys, offsets and consumer groups.
+**Try it:** partitions, keys, offsets and consumer groups. Each command starts a JVM (a
+few seconds apiece); ignore the consumers' notice about the new rebalance protocol.
 
 ```bash
 K="kubectl -n toolbox exec -i kafka -- /opt/kafka/bin"
@@ -577,32 +591,43 @@ printf 'alice:order-1\nbob:order-2\nalice:order-3\ncarol:order-4\nbob:order-5\n'
   $K/kafka-console-producer.sh --bootstrap-server localhost:9092 --topic orders \
   --reader-property parse.key=true --reader-property key.separator=:
 
-# Consume as group "billing": note each key always lands in the same partition, in order
+# Consume as group "billing", printing partition, offset and key
 $K/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic orders --group billing \
   --from-beginning --max-messages 5 --formatter-property print.key=true \
   --formatter-property print.partition=true --formatter-property print.offset=true
 
 $K/kafka-consumer-groups.sh --bootstrap-server localhost:9092 --describe --group billing   # offsets & lag
+```
 
-# (a console consumer with --max-messages exits once it has read that many)
-# Produce two more, then consume again as "billing": only the NEW records (it remembers its offset)
+In the consumer output, each key's records sit in one partition, in order. Keys can share
+a partition (in our run `alice` and `bob` both hashed to 0): the guarantee is per key.
+Billing's committed offsets equal the log-end offsets, so `LAG` is 0; "no active members"
+just means the consumer has exited.
+
+Next: the group remembers its place, and the log isn't consumed away.
+
+```bash
+# Produce two more, then consume again as "billing": only the NEW records
 printf 'dave:order-6\nalice:order-7\n' | $K/kafka-console-producer.sh --bootstrap-server localhost:9092 \
   --topic orders --reader-property parse.key=true --reader-property key.separator=:
 $K/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic orders --group billing --max-messages 2
 
-# A different group replays everything from the start: the log wasn't consumed away.
-# Note the order: per-key (per-partition) order holds, but there's no global order across partitions.
+# A new group replays all 7 from the start
 $K/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic orders --group analytics \
   --from-beginning --max-messages 7
 ```
 
+Billing gets only `order-6` and `order-7`. Analytics gets all seven, probably not in the
+order produced: each customer's orders stay in sequence (`order-1`, `order-3`, `order-7`),
+but there's no global order across partitions.
+
 ### Temporal: durable execution for workflows
 
-**What:** a platform for **durable execution**. You write long-running business
-processes as *ordinary code* (Go, Java, TypeScript, Python, .NET), and Temporal guarantees
-the code runs to completion despite crashes, deploys, timeouts and outages, even if it takes
-months. It was forked in 2019 from Uber's **Cadence** by its creators, one of whom had
-earlier led the design of **AWS Simple Workflow (SWF)**.
+**What:** **durable execution**. You write long-running business processes as *ordinary
+code* (Go, Java, TypeScript, Python, .NET), and Temporal guarantees it runs to completion
+despite crashes, deploys and outages, even if it takes months. Its creators forked it in
+2019 from **Cadence**, which they built at Uber; one had earlier led the design of **AWS
+Simple Workflow (SWF)**.
 
 **Mental model:** the split is between **workflows** and **activities**.
 
@@ -615,7 +640,7 @@ func OrderWorkflow(ctx workflow.Context, order Order) error {
         return err
     }
     if err := workflow.ExecuteActivity(ctx, ChargeCard, order).Get(ctx, nil); err != nil {
-        workflow.ExecuteActivity(ctx, ReleaseStock, order)   // saga compensation
+        _ = workflow.ExecuteActivity(ctx, ReleaseStock, order).Get(ctx, nil)   // saga compensation
         return err
     }
     workflow.Sleep(ctx, 14*24*time.Hour)                     // yes, really: sleep two weeks
@@ -623,35 +648,37 @@ func OrderWorkflow(ctx workflow.Context, order Order) error {
 }
 ```
 
-- **Activities** do the side effects (API calls, DB writes), with timeouts and retry policies.
-- **Workflow code** must be **deterministic**: no direct I/O, clocks or randomness (use
-  SDK APIs instead). Temporal records every step's result in an **event history**. If a
-  worker dies mid-workflow, another worker **replays** the history through the same code to
-  rebuild its exact state (completed activities aren't re-run, their recorded results are
-  reused) and carries on.
-- Workflows can receive **signals** (e.g. "customer cancelled"), answer **queries**, and wait on timers for as long as needed.
+- **Activities** do the side effects (API calls, DB writes), with timeouts and retry
+  policies.
+- **Workflow code** must be **deterministic**: no direct I/O, clocks or randomness (the SDK
+  has safe versions). Temporal records each step's result in an **event history**. If a
+  worker dies, another **replays** the history through the same code, reusing recorded
+  results rather than re-running activities, to rebuild the exact state and carry on. Hence
+  the two-week sleep is fine: no process sleeps, just a timer in Temporal's database.
+- Workflows can receive **signals** ("customer cancelled"), answer **queries**, and wait on
+  timers as long as they like.
 
-**Worth knowing:** the Temporal *server* (frontend, history, matching and worker services)
-stores state in **Cassandra, PostgreSQL or MySQL**, and your code runs in *your* **worker**
-processes, which long-poll task queues. Temporal never runs your code. Deploying new
-workflow code while old executions are in flight needs **versioning** care (replay must
-still be deterministic). Histories are capped (around 50k events), so very long-lived
-workflows use *continue-as-new*.
+**Worth knowing:** the Temporal *server* (frontend, history, matching and internal worker
+services) keeps state in **Cassandra, PostgreSQL or MySQL**. Your code runs in *your*
+**worker** processes, which long-poll task queues; Temporal never runs it. Changing workflow
+code while old executions are in flight needs **versioning** care, since replay must stay
+deterministic. Histories are capped (~50k events), so long-lived workflows
+*continue-as-new*.
 
-**Use cases:** order fulfilment and payments, sagas across microservices,
-infrastructure provisioning, user onboarding and subscription lifecycles, human approval
-steps, and increasingly orchestration of AI agents.
-**AWS analog:** **Step Functions** (a state machine defined in JSON/ASL vs. Temporal's
-workflows-as-code) and the older SWF. **Kafka vs Temporal:** Kafka is *choreography*
-(services react to each other's events, and nobody owns the whole process). Temporal is
-*orchestration* (one piece of code owns the process, its state and its error handling). Big
-systems often use both.
-**How it's run:** **Temporal Cloud** (SaaS), or self-hosted on Kubernetes with the Helm
-chart plus a managed Postgres (RDS/Aurora). Workers are just your Deployments.
+**Use cases:** order fulfilment and payments, sagas, infrastructure provisioning,
+subscription lifecycles, human approval steps, and increasingly AI-agent orchestration.
+**AWS analog:** **Step Functions** (a JSON state machine, versus workflows-as-code) and the
+older SWF. **How it's run:** **Temporal Cloud**, or self-hosted on Kubernetes with the Helm
+chart plus a managed Postgres. Workers are just your Deployments.
 
-**Try it** (off-cluster): the official tutorials at <https://learn.temporal.io> get a local
-dev server (`temporal server start-dev`) and a first workflow running in about 15 minutes,
-and they're worth doing to *feel* replay. Kill the worker mid-workflow and watch it resume.
+**Kafka vs Temporal:** Kafka is *choreography*: services react to each other's events and
+nobody owns the whole process. Temporal is *orchestration*: one piece of code owns the
+process, its state and its error handling. Big systems often use both.
+
+**Try it** (off-cluster): the tutorials at <https://learn.temporal.io> get a local dev
+server (`temporal server start-dev`) and a first workflow running in about 15 minutes. Do it
+to *feel* replay: kill the worker mid-workflow, restart it, and watch it pick up where it
+left off.
 
 ---
 
@@ -659,8 +686,8 @@ and they're worth doing to *feel* replay. Kill the worker mid-workflow and watch
 
 | Tool | What it is | AWS analog |
 |---|---|---|
-| **OpenTelemetry** | vendor-neutral SDKs + collector for traces, metrics and logs. Instrument once, send anywhere | ADOT / X-Ray SDK |
-| **Grafana** (+ **Loki**, **Tempo**, **Mimir**) | dashboards, plus logs / traces / long-term metrics backends from the same vendor | CloudWatch dashboards, Logs, X-Ray |
+| **OpenTelemetry** | vendor-neutral SDKs + collector for traces, metrics and logs: instrument once, send anywhere | ADOT / X-Ray SDK |
+| **Grafana** (+ **Loki**, **Tempo**, **Mimir**) | dashboards, plus logs, traces and long-term metrics backends from the same vendor | CloudWatch dashboards, Logs, X-Ray |
 | **Jaeger** | distributed tracing backend and UI | X-Ray |
 | **Linkerd** | a simpler, lighter service mesh than Istio | — |
 | **Cilium** | eBPF-based CNI: networking, NetworkPolicy, observability (Hubble), even mesh, in the kernel | VPC CNI + SGs |
@@ -670,7 +697,7 @@ and they're worth doing to *feel* replay. Kill the worker mid-workflow and watch
 | **Debezium** | turns database changelogs (binlog/WAL) into Kafka events (CDC) | DMS CDC |
 | **Flink** | stateful stream processing with exactly-once state | Managed Service for Apache Flink |
 | **Redis / Valkey** | in-memory data structures: cache, rate limits, queues, locks | ElastiCache / MemoryDB |
-| **CockroachDB**, **TiDB**, **YugabyteDB** | distributed SQL on Raft, Spanner-style | Aurora DSQL, Spanner-like |
+| **CockroachDB**, **TiDB**, **YugabyteDB** | distributed SQL on Raft, Spanner-style | Aurora DSQL |
 | **Cassandra / ScyllaDB** | leaderless, wide-column, eventually consistent, tunable quorum | Keyspaces, DynamoDB |
 | **SPIFFE / SPIRE** | standard workload identities (what Istio's certificates are) | IAM roles for workloads |
 | **OpenBao** | open-source fork of Vault | — |
@@ -681,12 +708,12 @@ and they're worth doing to *feel* replay. Kill the worker mid-workflow and watch
 
 | Question | Short answer |
 |---|---|
-| Istio or Consul for a mesh? | All-Kubernetes: Istio (or Linkerd, Cilium). Many VMs + clusters + data centres: Consul. On AWS, first ask whether VPC Lattice or plain mTLS in apps would do. |
-| etcd, ZooKeeper or Consul for coordination? | Don't build on them unless you must. If you must: etcd (modern, simple API, Raft), ZooKeeper only where the ecosystem requires it, Consul if you also want discovery and health checks. On AWS, DynamoDB conditional writes cover many lock/lease needs. |
-| Kafka, Kinesis, SQS/SNS or RabbitMQ? | Many consumers, replay, ordering per key, streams: Kafka/MSK or Kinesis. Distributing work items: SQS. Fan-out notifications: SNS (+SQS). Complex routing, request/reply: RabbitMQ. |
-| Temporal or Step Functions? | Step Functions for AWS-native glue with visual state machines and less code. Temporal for complex, long-running business logic you want as testable code, or outside AWS. |
+| Istio or Consul for a mesh? | All-Kubernetes: Istio (or Linkerd, Cilium). Lots of VMs plus clusters plus data centres: Consul. On AWS, first ask whether VPC Lattice or plain mTLS in the apps would do. |
+| etcd, ZooKeeper or Consul for coordination? | Don't build on them unless you must. If you must: etcd (modern, simple API), ZooKeeper only where the ecosystem requires it, Consul if you also want discovery and health checks. On AWS, DynamoDB conditional writes cover many lock and lease needs. |
+| Kafka, Kinesis, SQS/SNS or RabbitMQ? | Many consumers, replay, per-key ordering: Kafka/MSK or Kinesis. Distributing work items: SQS. Fan-out notifications: SNS (+SQS). Complex routing, request/reply: RabbitMQ. |
+| Temporal or Step Functions? | Step Functions for AWS-native glue: visual state machines, little code. Temporal for complex, long-running business logic you want as testable code, or outside AWS. |
 | Vault or Secrets Manager? | AWS-only: Secrets Manager + KMS (+ ACM PCA). Hybrid or multi-cloud, dynamic DB credentials everywhere, or one audited secrets plane: Vault. |
-| Prometheus or CloudWatch? | On Kubernetes, Prometheus-format metrics are the lingua franca (every chart exposes them). Store them in AMP or self-run with Thanos/Mimir. CloudWatch remains the place for AWS-service metrics. Many shops use both, with Grafana on top. |
+| Prometheus or CloudWatch? | On Kubernetes, Prometheus-format metrics are the lingua franca (every chart exposes them); store them in AMP, or self-run with Thanos/Mimir. CloudWatch remains home for AWS-service metrics. Many shops use both, with Grafana on top. |
 
 ## Clean up
 

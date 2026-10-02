@@ -1,5 +1,10 @@
 # HTTPRoute: routing rules attached to a Gateway (like ALB listener rules),
 # typically owned by the application team.
+#
+# Unlike ALB rules, these have no priority numbers and their order doesn't matter.
+# When several rules match a request, the most specific wins: longest path match
+# first, then the rule with the most header matches. (A rule with no path match
+# counts as PathPrefix "/".)
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
@@ -8,7 +13,8 @@ spec:
   parentRefs:
     - name: web-gateway
   rules:
-    # Rule 1: requests with header "x-canary: true" always go to v2
+    # Header match: "x-canary: true" goes to v2. Path is implicitly PathPrefix "/",
+    # so this beats the weighted rule below, but loses to /v1 and /v2 (longer paths).
     - matches:
         - headers:
             - name: x-canary
@@ -16,7 +22,9 @@ spec:
       backendRefs:
         - name: web-v2
           port: 80
-    # Rule 2: explicit version paths, with the prefix stripped before forwarding
+    # Explicit version paths, with the prefix stripped before forwarding
+    # (/v1/healthz reaches the app as /healthz). PathPrefix matches whole path
+    # segments: /v1 matches /v1 and /v1/x, but not /v1foo.
     - matches:
         - path: { type: PathPrefix, value: /v1 }
       filters:
@@ -35,7 +43,7 @@ spec:
       backendRefs:
         - name: web-v2
           port: 80
-    # Rule 3: everything else - a weighted canary split (90% v1 / 10% v2)
+    # Everything else: a weighted canary split (90% v1 / 10% v2)
     - backendRefs:
         - name: web-v1
           port: 80

@@ -43,7 +43,12 @@ check() {
   esac
 }
 
+usage() { sed -n '2,6p' "$0"; exit 1; }
 cmd=${1:-list}
+if [ "$cmd" != list ]; then
+  [ $# -ge 2 ] && [[ $2 =~ ^[0-9]+$ ]] || usage
+  [ -f "drills/$(pad "$2").yaml" ] || { echo "No drill $2. Try: $0 list"; exit 1; }
+fi
 case $cmd in
   list)
     for k in $(printf '%s\n' "${!TITLE[@]}" | sort); do echo "  $k  ${TITLE[$k]}"; done ;;
@@ -61,5 +66,5 @@ case $cmd in
     n=$(pad "$2")
     kubectl delete namespace "drill-$n" --ignore-not-found --wait=true >/dev/null
     echo "Deleted namespace drill-$n. Run '$0 start $n' to try again." ;;
-  *) sed -n '2,7p' "$0"; exit 1 ;;
+  *) usage ;;
 esac

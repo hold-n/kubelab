@@ -53,7 +53,7 @@ data:
                   - endpoint:
                       address:
                         socket_address: { address: metrics-demo-headless.toolbox.svc.cluster.local, port_value: 8080 }
-          # Eject endpoints that keep failing (passive health checking / circuit breaking)
+          # Outlier detection (passive health checking): eject endpoints that keep returning 5xx
           outlier_detection:
             consecutive_5xx: 3
             base_ejection_time: 30s

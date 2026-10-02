@@ -1,6 +1,6 @@
 # Single-node, dev-mode instances of each tool, for poking at. NOT how you'd run them
-# in production (no replication, no persistence, no auth hardening). See "How these are
-# actually run" in the README for real topologies.
+# in production (no replication, no persistence, no auth hardening). See "Part 1: how this
+# stuff is actually run" and each tool's "How it's run" in the README for real topologies.
 apiVersion: v1
 kind: Namespace
 metadata:
